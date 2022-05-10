@@ -25,6 +25,7 @@ import scala.collection.JavaConverters._
 
 /**
  * This class handles the consumers interaction with zookeeper
+ * 这个类处理消费者与zookeeper的交互
  *
  * Directories:
  * 1. Consumer id registry:

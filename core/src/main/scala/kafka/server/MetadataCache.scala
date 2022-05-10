@@ -161,6 +161,11 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
 
   def getControllerId: Option[Int] = controllerId
 
+  /**
+   * metadata数据更新
+   * @param correlationId
+   * @param updateMetadataRequest
+   */
   def updateCache(correlationId: Int, updateMetadataRequest: UpdateMetadataRequest) {
     inWriteLock(partitionMetadataLock) {
       controllerId = updateMetadataRequest.controllerId match {

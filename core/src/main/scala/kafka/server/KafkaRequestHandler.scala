@@ -26,6 +26,7 @@ import org.apache.kafka.common.utils.Utils
 
 /**
  * A thread that answers kafka requests.
+ * 响应kafka请求的线程
  */
 class KafkaRequestHandler(id: Int,
                           brokerId: Int,
@@ -45,6 +46,7 @@ class KafkaRequestHandler(id: Int,
           // time_window is independent of the number of threads, each recorded idle
           // time should be discounted by # threads.
           val startSelectTime = SystemTime.nanoseconds
+          // 从 requestQueue 获取请求
           req = requestChannel.receiveRequest(300)
           val idleTime = SystemTime.nanoseconds - startSelectTime
           aggregateIdleMeter.mark(idleTime / totalHandlerThreads)
@@ -57,6 +59,7 @@ class KafkaRequestHandler(id: Int,
         }
         req.requestDequeueTimeMs = SystemTime.milliseconds
         trace("Kafka request handler %d on broker %d handling request %s".format(id, brokerId, req))
+        // 处理请求
         apis.handle(req)
       } catch {
         case e: Throwable => error("Exception when handling request", e)
@@ -76,9 +79,12 @@ class KafkaRequestHandlerPool(val brokerId: Int,
   private val aggregateIdleMeter = newMeter("RequestHandlerAvgIdlePercent", "percent", TimeUnit.NANOSECONDS)
 
   this.logIdent = "[Kafka Request Handler on Broker " + brokerId + "], "
+  // numThreads 默认8个线程
   val threads = new Array[Thread](numThreads)
+  // 处理请求的线程
   val runnables = new Array[KafkaRequestHandler](numThreads)
   for(i <- 0 until numThreads) {
+    // 依次封装和启动
     runnables(i) = new KafkaRequestHandler(i, brokerId, aggregateIdleMeter, numThreads, requestChannel, apis)
     threads(i) = Utils.daemonThread("kafka-request-handler-" + i, runnables(i))
     threads(i).start()

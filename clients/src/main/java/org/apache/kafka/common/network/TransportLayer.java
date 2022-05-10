@@ -57,6 +57,7 @@ public interface TransportLayer extends ScatteringByteChannel, GatheringByteChan
 
     /**
      * returns underlying socketChannel
+     * 返回底层socketChannel
      */
     SocketChannel socketChannel();
 

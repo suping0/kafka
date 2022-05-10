@@ -43,6 +43,12 @@ trait PartitionLeaderSelector {
  * 2. Else, if unclean leader election for the topic is disabled, it throws a NoReplicaOnlineException.
  * 3. Else, it picks some alive broker from the assigned replica list as the new leader and the new isr.
  * 4. If no broker in the assigned replica list is alive, it throws a NoReplicaOnlineException
+ * 选择新的领导者，新的isr和接收副本（用于LeaderAndIsrRequest）：
+ * 1.如果isr中至少有一个broker还活着，那么它将从live isr中选择一个经纪人作为新的领导者，并从live isr中选择一个经纪人作为新的isr。
+ * 2.否则，如果禁用了针对该主题的不恰当的领导者选举，则会引发NoReplicaOnlineException。
+ * 3.否则，它从分配的副本列表中选择一些活动的代理作为新的领导者和新的isr。
+ * 4.如果分配的副本列表中没有代理处于活动状态，则它将引发NoReplicaOnlineException。
+ *
  * Replicas to receive LeaderAndIsr request = live assigned replicas
  * Once the leader is successfully registered in zookeeper, it updates the allLeaders cache
  */

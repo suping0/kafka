@@ -29,6 +29,8 @@ import java.util.regex.Pattern;
  * A class for tracking the topics, partitions, and offsets for the consumer. A partition
  * is "assigned" either directly with {@link #assignFromUser(Collection)} (manual assignment)
  * or with {@link #assignFromSubscribed(Collection)} (automatic assignment from subscription).
+ * 用于跟踪consumer的主题、分区和偏移量的类。
+ * 分区是直接用{@link#assignFromUser（Collection）}（手动分配）或{@link#assignFromSubscribed（Collection）}（订阅的自动分配）来“分配”的。
  *
  * Once assigned, the partition is not considered "fetchable" until its initial position has
  * been set with {@link #seek(TopicPartition, long)}. Fetchable partitions track a fetch
@@ -37,13 +39,22 @@ import java.util.regex.Pattern;
  * from a partition through {@link #pause(TopicPartition)} without affecting the fetched/consumed
  * offsets. The partition will remain unfetchable until the {@link #resume(TopicPartition)} is
  * used. You can also query the pause state independently with {@link #isPaused(TopicPartition)}.
+ * 一旦分配了分区，直到用{@link#seek（TopicPartition，long）}设置了它的初始位置，分区才被认为是“可获取的”。
+ * 可获取分区跟踪用于设置下一次获取的偏移量的获取位置，以及作为返回给用户的最后一个偏移量的已消耗位置。
+ * 您可以通过{@link#pause（TopicPartition）}挂起从分区的获取，而不影响获取/使用的偏移量。
+ * 在使用{@link#resume（TopicPartition）}之前，分区将保持不可蚀刻。
+ * 您还可以使用{@link#isPaused（TopicPartition）}独立地查询暂停状态。
  *
  * Note that pause state as well as fetch/consumed positions are not preserved when partition
  * assignment is changed whether directly by the user or through a group rebalance.
+ * 请注意，当分区分配直接由用户更改或通过组重新平衡更改时，暂停状态以及获取/使用的位置不会保留。
  *
  * This class also maintains a cache of the latest commit position for each of the assigned
  * partitions. This is updated through {@link #committed(TopicPartition, OffsetAndMetadata)} and can be used
  * to set the initial fetch position (e.g. {@link Fetcher#resetOffset(TopicPartition)}.
+ * 此类还为每个分配的分区维护最新提交位置的缓存。
+ * 它通过{@link#committed（TopicPartition，OffsetAndMetadata）}更新，
+ * 并可用于设置初始获取位置（例如{@link Fetcher#resetOffset（TopicPartition）}）。
  */
 public class SubscriptionState {
 
@@ -128,6 +139,7 @@ public class SubscriptionState {
             this.needsPartitionAssignment = true;
 
             // Remove any assigned partitions which are no longer subscribed to
+            // 删除掉已经不再订阅的topicPartition
             for (Iterator<TopicPartition> it = assignment.keySet().iterator(); it.hasNext(); ) {
                 TopicPartition tp = it.next();
                 if (!subscription.contains(tp.topic()))
@@ -153,6 +165,7 @@ public class SubscriptionState {
     }
 
     /**
+     * 手动分配
      * Change the assignment to the specified partitions provided by the user,
      * note this is different from {@link #assignFromSubscribed(Collection)}
      * whose input partitions are provided from the subscribed topics.
@@ -174,8 +187,10 @@ public class SubscriptionState {
     }
 
     /**
+     * 订阅的自动分配
      * Change the assignment to the specified partitions returned from the coordinator,
      * note this is different from {@link #assignFromUser(Collection)} which directly set the assignment from user inputs
+     * 将assignment更改为从coordinator返回的指定分区，注意这与直接从用户输入设置分配的{@link#assignFromUser（Collection）}不同
      */
     public void assignFromSubscribed(Collection<TopicPartition> assignments) {
         for (TopicPartition tp : assignments)

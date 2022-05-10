@@ -32,6 +32,8 @@ import org.slf4j.LoggerFactory;
  * 
  * Metadata is maintained for only a subset of topics, which can be added to over time. When we request metadata for a
  * topic we don't have any metadata for it will trigger a metadata update.
+ * 元数据只针对一个主题的子集进行维护，随着时间的推移，这些子集可以被添加到元数据中。
+ * 当我们为一个我们没有任何元数据的主题请求元数据时，将触发元数据更新。
  */
 public final class Metadata {
 
@@ -92,6 +94,8 @@ public final class Metadata {
      * The next time to update the cluster info is the maximum of the time the current info will expire and the time the
      * current info can be updated (i.e. backoff time has elapsed); If an update has been request then the expiry time
      * is now
+     * 下一次更新集群信息的时间是当前信息过期的时间和当前信息可以更新的时间的最大值（即后退时间已过）。
+     * 如果已经请求更新，那么到期时间就是现在。
      */
     public synchronized long timeToNextUpdate(long nowMs) {
         long timeToExpire = needUpdate ? 0 : Math.max(this.lastSuccessfulRefreshMs + this.metadataExpireMs - nowMs, 0);
@@ -117,6 +121,7 @@ public final class Metadata {
 
     /**
      * Wait for metadata update until the current version is larger than the last version we know of
+     * 等待元数据更新，直到当前版本大于我们知道的最后一个版本为止
      */
     public synchronized void awaitUpdate(final int lastVersion, final long maxWaitMs) throws InterruptedException {
         if (maxWaitMs < 0) {
@@ -124,6 +129,9 @@ public final class Metadata {
         }
         long begin = System.currentTimeMillis();
         long remainingWaitMs = maxWaitMs;
+        // 如果拉取成功了，那么version版本号，集群元数据的版本号一定会累加，
+        // 所以只要判断version版本号还没有累加，就说明此时Sender县城关还没有成功的拉取元数据，
+        // 此时就是在主线程里，就是要wait阻塞等待最多60s即可
         while (this.version <= lastVersion) {
             if (remainingWaitMs != 0)
                 wait(remainingWaitMs);
@@ -174,6 +182,10 @@ public final class Metadata {
             listener.onMetadataUpdate(cluster);
 
         // Do this after notifying listeners as subscribed topics' list can be changed by listeners
+        // 默认是false, 随意不会去brokers去拉取集群的元数据
+        // 在KafkaProducer初始化的时候，并没有真正的去某一个broker上去拉取元数据的，
+        // 但是他肯定是对集群元数据做了一个初始化的，把你配置的那些broker地址转化为了Node，放在Cluster对象实例里
+        // cluster : Kafka集群中节点、主题和分区的子集的表示。 nodes, topics, and partitions
         this.cluster = this.needMetadataForAllTopics ? getClusterForCurrentTopics(cluster) : cluster;
 
         notifyAll();

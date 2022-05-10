@@ -205,6 +205,7 @@ public class Compressor {
         // put a record as un-compressed into the underlying stream
         long crc = Record.computeChecksum(timestamp, key, value, type, valueOffset, valueSize);
         byte attributes = Record.computeAttributes(type);
+        // mark
         putRecord(crc, attributes, timestamp, key, value, valueOffset, valueSize);
         return crc;
     }
@@ -219,6 +220,7 @@ public class Compressor {
 
     private void putRecord(final long crc, final byte attributes, final long timestamp, final byte[] key, final byte[] value, final int valueOffset, final int valueSize) {
         maxTimestamp = Math.max(maxTimestamp, timestamp);
+        // mark
         Record.write(this, crc, attributes, timestamp, key, value, valueOffset, valueSize);
     }
 

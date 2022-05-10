@@ -19,7 +19,9 @@ public class PartitionInfo {
 
     private final String topic;
     private final int partition;
+    // leader partiton
     private final Node leader;
+    // 副本分区
     private final Node[] replicas;
     private final Node[] inSyncReplicas;
 

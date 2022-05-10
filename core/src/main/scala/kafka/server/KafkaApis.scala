@@ -49,6 +49,7 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse
 
 /**
  * Logic to handle the various Kafka requests
+ * 处理各种Kafka请求的逻辑
  */
 class KafkaApis(val requestChannel: RequestChannel,
                 val replicaManager: ReplicaManager,
@@ -67,26 +68,35 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   /**
    * Top-level method that handles all requests and multiplexes to the right api
+   * 处理所有请求并多路传输到正确api的顶级方法
    */
   def handle(request: RequestChannel.Request) {
     try {
       trace("Handling request:%s from connection %s;securityProtocol:%s,principal:%s".
         format(request.requestDesc(true), request.connectionId, request.securityProtocol, request.session.principal))
       ApiKeys.forId(request.requestId) match {
+        // 处理producer发送过来的请求
         case ApiKeys.PRODUCE => handleProducerRequest(request)
+          // follower 副本同步
         case ApiKeys.FETCH => handleFetchRequest(request)
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
+          // 更新topic元数据请求。处理topic metadata请求，包含topic和partiton更新，创建，删除
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
+          // 创建leadet/follower角色的线程
         case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
         case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
+          // 创建group_coordinator请求
         case ApiKeys.GROUP_COORDINATOR => handleGroupCoordinatorRequest(request)
+          // consumer加入group请求
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
+          // 处理consumer心跳
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
+          // 同步消费组的分区信息
         case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request)
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)
@@ -128,6 +138,8 @@ class KafkaApis(val requestChannel: RequestChannel,
         // for each new leader or follower, call coordinator to handle consumer group migration.
         // this callback is invoked under the replica state change lock to ensure proper order of
         // leadership changes
+        // 对于每个新的leader或follower，调用coordinator处理consumer gruop迁移。
+        // 此回调在副本状态更改锁下调用，以确保更改的顺序正确。
         updatedLeaders.foreach { partition =>
           if (partition.topic == TopicConstants.GROUP_METADATA_TOPIC_NAME)
             coordinator.handleGroupImmigration(partition.partitionId)
@@ -141,6 +153,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       val responseHeader = new ResponseHeader(correlationId)
       val leaderAndIsrResponse =
         if (authorize(request.session, ClusterAction, Resource.ClusterResource)) {
+          // mark
           val result = replicaManager.becomeLeaderOrFollower(correlationId, leaderAndIsrRequest, metadataCache, onLeadershipChange)
           new LeaderAndIsrResponse(result.errorCode, result.responseMap.mapValues(new JShort(_)).asJava)
         } else {
@@ -182,6 +195,9 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val updateMetadataResponse =
       if (authorize(request.session, ClusterAction, Resource.ClusterResource)) {
+        /*
+        处理请求
+         */
         replicaManager.maybeUpdateMetadataCache(correlationId, updateMetadataRequest, metadataCache)
         new UpdateMetadataResponse(Errors.NONE.code)
       } else {
@@ -189,6 +205,9 @@ class KafkaApis(val requestChannel: RequestChannel,
       }
 
     val responseHeader = new ResponseHeader(correlationId)
+    /*
+    返回响应
+     */
     requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, responseHeader, updateMetadataResponse)))
   }
 
@@ -331,7 +350,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       case (topicPartition, _) => authorize(request.session, Write, new Resource(Topic, topicPartition.topic))
     }
 
-    // the callback for sending a produce response
+    // the callback for sending a produce response 用于发送生成响应的回调，处理请求的处理状态
     def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]) {
 
       val mergedResponseStatus = responseStatus ++ unauthorizedRequestInfo.mapValues(_ =>
@@ -340,6 +359,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       var errorInResponse = false
 
       mergedResponseStatus.foreach { case (topicPartition, status) =>
+        // 处理每一个topicPartition的处理状态(producer发送过来的是不同topicPartition的batch)
         if (status.errorCode != Errors.NONE.code) {
           errorInResponse = true
           debug("Produce request with correlation id %d from client %s on partition %s failed due to %s".format(
@@ -350,6 +370,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
       }
 
+      // 回调函数：将相应放到responseQueues中
       def produceResponseCallback(delayTimeMs: Int) {
         if (produceRequest.acks == 0) {
           // no operation needed if producer request.required.acks = 0; however, if there is any error in handling
@@ -378,11 +399,12 @@ class KafkaApis(val requestChannel: RequestChannel,
             case version => throw new IllegalArgumentException(s"Version `$version` of ProduceRequest is not handled. Code must be updated.")
           }
 
+          // 将请求处理的结果封装成response,放到responseQueues中
           requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, respHeader, respBody)))
         }
       }
 
-      // When this callback is triggered, the remote API call has completed
+      // When this callback is triggered, the remote API call has completed 触发此回调时，远程API调用已完成
       request.apiRemoteCompleteTimeMs = SystemTime.milliseconds
 
       quotaManagers(ApiKeys.PRODUCE.id).recordAndMaybeThrottle(
@@ -396,12 +418,18 @@ class KafkaApis(val requestChannel: RequestChannel,
     else {
       val internalTopicsAllowed = request.header.clientId == AdminUtils.AdminClientId
 
-      // Convert ByteBuffer to ByteBufferMessageSet
+      // Convert ByteBuffer to ByteBufferMessageSet 将ByteBuffer转换为ByteBufferMessageSet
       val authorizedMessagesPerPartition = authorizedRequestInfo.map {
+            // ByteBufferMessageSet 存储在字节缓冲区中的一系列信息
         case (topicPartition, buffer) => (topicPartition, new ByteBufferMessageSet(buffer))
       }
 
-      // call the replica manager to append messages to the replicas
+      /*
+       * call the replica manager to append messages to the replicas 调用副本管理器将消息附加到副本
+       * 将消息附加到分区的leader副本上，并等待它们被复制到其他副本上；
+       * 当超时或满足所需的确认时，将触发回调函数。
+       * leader和follower都是replica
+       */
       replicaManager.appendMessages(
         produceRequest.timeout.toLong,
         produceRequest.acks,
@@ -412,12 +440,20 @@ class KafkaApis(val requestChannel: RequestChannel,
       // if the request is put into the purgatory, it will have a held reference
       // and hence cannot be garbage collected; hence we clear its data here in
       // order to let GC re-claim its memory since it is already appended to log
+      // 如果请求被放入purgatory，它将有一个保持的引用，因此不能被垃圾收集；
+      // 因此，我们在这里清除它的数据，以便让GC重新声明它的内存，因为它已经附加到日志中了。
       produceRequest.clearPartitionRecords()
     }
   }
 
   /**
    * Handle a fetch request
+   * 处理fetch请求
+   * （1）先会尝试从本地磁盘文件中读取指定offset之后的数据
+   * （2）如果能读取到，那么就直接返回给人家就可以了
+   * （3）是不是要考虑更新一下HW，ISR，这些东西是否需要在这里来维护
+   * （4）如果读取不到任何新的数据，此时需要采用时间轮机制，延迟执行fetch
+   * （5）如果这个leader分区有新的数据写入，此时可以唤醒时间轮中等待的FetchRequest来执行数据拉取
    */
   def handleFetchRequest(request: RequestChannel.Request) {
     val fetchRequest = request.requestObj.asInstanceOf[FetchRequest]
@@ -471,6 +507,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         trace(s"Sending fetch response to client ${fetchRequest.clientId} of " +
           s"${convertedPartitionData.values.map(_.messages.sizeInBytes).sum} bytes")
         val response = FetchResponse(fetchRequest.correlationId, mergedPartitionData, fetchRequest.versionId, delayTimeMs)
+        /*
+        发送fetch请求的响应。
+        将响应放到responseQueues中，异步返回响应
+         */
         requestChannel.sendResponse(new RequestChannel.Response(request, new FetchResponseSend(request.connectionId, response)))
       }
 
@@ -493,6 +533,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       sendResponseCallback(Map.empty)
     else {
       // call the replica manager to fetch messages from the local replica
+      //调用副本管理器从本地副本获取消息
       replicaManager.fetchMessages(
         fetchRequest.maxWait.toLong,
         fetchRequest.replicaId,
@@ -626,6 +667,9 @@ class KafkaApis(val requestChannel: RequestChannel,
                           replicationFactor: Int,
                           properties: Properties = new Properties()): MetadataResponse.TopicMetadata = {
     try {
+      /*
+      创建topic
+       */
       AdminUtils.createTopic(zkUtils, topic, numPartitions, replicationFactor, properties, RackAwareMode.Safe)
       info("Auto creation of topic %s with %d partitions and replication factor %d is successful"
         .format(topic, numPartitions, replicationFactor))
@@ -667,6 +711,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         if (topic == TopicConstants.GROUP_METADATA_TOPIC_NAME) {
           createGroupMetadataTopic()
         } else if (config.autoCreateTopicsEnable) {
+          // 创建topic
           createTopic(topic, config.numPartitions, config.defaultReplicationFactor)
         } else {
           new MetadataResponse.TopicMetadata(Errors.UNKNOWN_TOPIC_OR_PARTITION, topic, common.Topic.isInternal(topic),
@@ -720,11 +765,13 @@ class KafkaApis(val requestChannel: RequestChannel,
     // In version 0, we returned an error when brokers with replicas were unavailable,
     // while in higher versions we simply don't include the broker in the returned broker list
     val errorUnavailableEndpoints = requestVersion == 0
-    val topicMetadata =
+    val topicMetadata: Seq[MetadataResponse.TopicMetadata] =
       if (authorizedTopics.isEmpty)
         Seq.empty[MetadataResponse.TopicMetadata]
-      else
+      else {
+        // 如果topic不存在，则创建
         getTopicMetadata(authorizedTopics, request.securityProtocol, errorUnavailableEndpoints)
+      }
 
     val completeTopicMetadata = topicMetadata ++ unauthorizedTopicMetadata
 
@@ -812,6 +859,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       val responseBody = new GroupCoordinatorResponse(Errors.GROUP_AUTHORIZATION_FAILED.code, Node.noNode)
       requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
     } else {
+      // group_id的hash值 % __consumer_offsets 分区数 = coordinator所在的partition
       val partition = coordinator.partitionFor(groupCoordinatorRequest.groupId)
 
       // get metadata (and create the topic if necessary)
@@ -820,12 +868,18 @@ class KafkaApis(val requestChannel: RequestChannel,
       val responseBody = if (offsetsTopicMetadata.error != Errors.NONE) {
         new GroupCoordinatorResponse(Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code, Node.noNode)
       } else {
-        val coordinatorEndpoint = offsetsTopicMetadata.partitionMetadata().asScala
+        /*
+        partition分区所在的broker就是该group coordinator角色所在的节点
+         */
+        val coordinatorEndpoint: Option[Node] = offsetsTopicMetadata.partitionMetadata().asScala
           .find(_.partition == partition)
           .map(_.leader())
 
         coordinatorEndpoint match {
           case Some(endpoint) if !endpoint.isEmpty =>
+            /*
+            封装创建group cordinator的响应
+             */
             new GroupCoordinatorResponse(Errors.NONE.code, endpoint)
           case _ =>
             new GroupCoordinatorResponse(Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code, Node.noNode)
@@ -874,6 +928,10 @@ class KafkaApis(val requestChannel: RequestChannel,
     requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
   }
 
+  /**
+   * 处理 ApiKeys.JOIN_GROUP
+   * @param request
+   */
   def handleJoinGroupRequest(request: RequestChannel.Request) {
     import JavaConversions._
 
@@ -881,8 +939,12 @@ class KafkaApis(val requestChannel: RequestChannel,
     val responseHeader = new ResponseHeader(request.header.correlationId)
 
     // the callback for sending a join-group response
+    // 在DelayedJoin的onComplete()中调用
     def sendResponseCallback(joinResult: JoinGroupResult) {
       val members = joinResult.members map { case (memberId, metadataArray) => (memberId, ByteBuffer.wrap(metadataArray)) }
+      /*
+      封装group的lead,member等元数据信息，执行结果
+       */
       val responseBody = new JoinGroupResponse(joinResult.errorCode, joinResult.generationId, joinResult.subProtocol,
         joinResult.memberId, joinResult.leaderId, members)
 
@@ -904,6 +966,9 @@ class KafkaApis(val requestChannel: RequestChannel,
       // let the coordinator to handle join-group
       val protocols = joinGroupRequest.groupProtocols().map(protocol =>
         (protocol.name, Utils.toArray(protocol.metadata))).toList
+      /*
+      处理join group请求
+       */
       coordinator.handleJoinGroup(
         joinGroupRequest.groupId,
         joinGroupRequest.memberId,
@@ -930,6 +995,10 @@ class KafkaApis(val requestChannel: RequestChannel,
     if (!authorize(request.session, Read, new Resource(Group, syncGroupRequest.groupId()))) {
       sendResponseCallback(Array[Byte](), Errors.GROUP_AUTHORIZATION_FAILED.code)
     } else {
+      /*
+      GroupCoordinator处理常规组成员资格和偏移管理。
+      每个Kafka服务器实例化一个协调器，负责一系列group。根据组名将组分配给协调员。
+       */
       coordinator.handleSyncGroup(
         syncGroupRequest.groupId(),
         syncGroupRequest.generationId(),
@@ -957,7 +1026,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, respHeader, heartbeatResponse)))
     }
     else {
-      // let the coordinator to handle heartbeat
+      // let the coordinator to handle heartbeat 让协调器来处理心跳
       coordinator.handleHeartbeat(
         heartbeatRequest.groupId(),
         heartbeatRequest.memberId(),

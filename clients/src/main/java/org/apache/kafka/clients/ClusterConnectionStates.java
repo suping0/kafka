@@ -31,16 +31,26 @@ final class ClusterConnectionStates {
     /**
      * Return true iff we can currently initiate a new connection. This will be the case if we are not
      * connected and haven't been connected for at least the minimum reconnection backoff period.
+     * 如果我们当前可以发起一个新的连接，则返回true。
+     * 如果我们没有连接，并且至少在最短的重新连接时间内没有被连接，则会出现这种情况。
      * @param id The connection id to check
      * @param now The current time in MS
      * @return true if we can initiate a new connection
      */
     public boolean canConnect(String id, long now) {
+        /**
+         * 1. 先找到broker id对应的一个连接状态，如果此时这个连接状态是null，就说明之前从来没有建立过连接，
+         *    此时就可以直接返回true，就说明可以跟这个broker建立连接；
+         * 2. 否则如果连接状态已经存在，如果当前broker的状态是断开连接，而且上一次跟这个broker尝试建立连接的时间到现在，
+         *    已经超过了重试的时间了，默认100ms
+         * 通过上述两个条件，判断是否可以和broker尝试建立连接
+         */
         NodeConnectionState state = nodeState.get(id);
-        if (state == null)
+        if (state == null) {
             return true;
-        else
+        } else {
             return state.state == ConnectionState.DISCONNECTED && now - state.lastConnectAttemptMs >= this.reconnectBackoffMs;
+        }
     }
 
     /**

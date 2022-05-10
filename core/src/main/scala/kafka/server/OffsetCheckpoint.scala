@@ -96,6 +96,7 @@ class OffsetCheckpoint(val file: File) extends Logging {
             val expectedSize = line.toInt
             val offsets = mutable.Map[TopicAndPartition, Long]()
             line = reader.readLine()
+            // 读取文件数据的offset
             while (line != null) {
               WhiteSpacesPattern.split(line) match {
                 case Array(topic, partition, offset) =>

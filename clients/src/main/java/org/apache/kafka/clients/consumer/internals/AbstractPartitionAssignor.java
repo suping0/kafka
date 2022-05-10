@@ -25,14 +25,17 @@ import java.util.Map;
 import java.util.Set;
 
 /**
+ * assignment的抽象父类，执行assignment操作
  * Abstract assignor implementation which does some common grunt work (in particular collecting
  * partition counts which are always needed in assignors).
+ * 抽象赋值器实现，它执行一些常见的繁重工作（特别是收集赋值器中总是需要的分区计数）
  */
 public abstract class AbstractPartitionAssignor implements PartitionAssignor {
     private static final Logger log = LoggerFactory.getLogger(AbstractPartitionAssignor.class);
 
     /**
      * Perform the group assignment given the partition counts and member subscriptions
+     * 在给定分区计数和成员订阅的情况下执行组分配
      * @param partitionsPerTopic The number of partitions for each subscribed topic. Topics not in metadata will be excluded
      *                           from this map.
      * @param subscriptions Map from the memberId to their respective topic subscription
@@ -46,16 +49,32 @@ public abstract class AbstractPartitionAssignor implements PartitionAssignor {
         return new Subscription(new ArrayList<>(topics));
     }
 
+    /**
+     * 执行consumers group assignment
+     * @param metadata Current topic/broker metadata known by consumer
+     * @param subscriptions Subscriptions from all members provided through {@link #subscription(Set)}
+     *                      [menber, subscription]
+     * @return
+     */
     @Override
     public Map<String, Assignment> assign(Cluster metadata, Map<String, Subscription> subscriptions) {
+        /*
+        得到每个member订阅的topics
+         */
         Set<String> allSubscribedTopics = new HashSet<>();
         Map<String, List<String>> topicSubscriptions = new HashMap<>();
         for (Map.Entry<String, Subscription> subscriptionEntry : subscriptions.entrySet()) {
             List<String> topics = subscriptionEntry.getValue().topics();
             allSubscribedTopics.addAll(topics);
+            /*
+            [member, topics]
+             */
             topicSubscriptions.put(subscriptionEntry.getKey(), topics);
         }
 
+        /*
+        得到topic对应的partitons数据
+         */
         Map<String, Integer> partitionsPerTopic = new HashMap<>();
         for (String topic : allSubscribedTopics) {
             Integer numPartitions = metadata.partitionCountForTopic(topic);
@@ -64,7 +83,10 @@ public abstract class AbstractPartitionAssignor implements PartitionAssignor {
             else
                 log.debug("Skipping assignment for topic {} since no metadata is available", topic);
         }
-
+        /*
+        Perform the group assignment given the partition counts and member subscriptions
+        在给定partition counts和member subscriptions条件下，执行group的assignment
+         */
         Map<String, List<TopicPartition>> rawAssignments = assign(partitionsPerTopic, topicSubscriptions);
 
         // this class has maintains no user data, so just wrap the results

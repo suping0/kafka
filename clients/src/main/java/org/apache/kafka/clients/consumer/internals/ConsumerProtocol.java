@@ -33,7 +33,9 @@ import java.util.Map;
 
 /**
  * ConsumerProtocol contains the schemas for consumer subscriptions and assignments for use with
- * Kafka's generalized group management protocol. Below is the version 0 format:
+ * Kafka's generalized group management protocol.
+ * ConsumerProtocol包含用于Kafka的通用组管理协议的consumer subscriptions(消费者订阅) and assignments(分配)的模式
+ * Below is the version 0 format:
  *
  * <pre>
  * Subscription => Version Topics
@@ -51,6 +53,9 @@ import java.util.Map;
  * The current implementation assumes that future versions will not break compatibility. When
  * it encounters a newer version, it parses it using the current format. This basically means
  * that new versions cannot remove or reorder any of the existing fields.
+ * 当前的实现假定将来的版本不会破坏兼容性。
+ * 当它遇到一个更新的版本时，它会使用当前的格式来解析它。
+ * 这基本上意味着新版本不能删除或重新排序任何现有字段。
  */
 public class ConsumerProtocol {
 
@@ -106,6 +111,9 @@ public class ConsumerProtocol {
         Struct header = CONSUMER_PROTOCOL_HEADER_SCHEMA.read(buffer);
         Short version = header.getShort(VERSION_KEY_NAME);
         checkVersionCompatibility(version);
+        /*
+        解析responseBody ：buffer
+         */
         Struct struct = ASSIGNMENT_V0.read(buffer);
         ByteBuffer userData = struct.getBytes(USER_DATA_KEY_NAME);
         List<TopicPartition> partitions = new ArrayList<>();
@@ -117,6 +125,9 @@ public class ConsumerProtocol {
                 partitions.add(new TopicPartition(topic, partition));
             }
         }
+        /*
+        userData : 消费者组数据
+         */
         return new PartitionAssignor.Assignment(partitions, userData);
     }
 

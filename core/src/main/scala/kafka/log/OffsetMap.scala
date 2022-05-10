@@ -35,6 +35,9 @@ trait OffsetMap {
 /**
  * An hash table used for deduplicating the log. This hash table uses a cryptographicly secure hash of the key as a proxy for the key
  * for comparisons and to save space on object overhead. Collisions are resolved by probing. This hash table does not support deletes.
+ * 用于对日志进行重复数据消除的哈希表。
+ * 此哈希表使用密钥的加密安全哈希作为密钥的代理进行比较，并节省对象开销上的空间。
+ * 碰撞是通过探测来解决的。此哈希表不支持删除。
  * @param memory The amount of memory this map can use
  * @param hashAlgorithm The hash algorithm instance to use: MD2, MD5, SHA-1, SHA-256, SHA-384, SHA-512
  */

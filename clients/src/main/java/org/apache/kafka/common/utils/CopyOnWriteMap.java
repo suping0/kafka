@@ -104,10 +104,13 @@ public class CopyOnWriteMap<K, V> implements ConcurrentMap<K, V> {
 
     @Override
     public synchronized V putIfAbsent(K k, V v) {
-        if (!containsKey(k))
+        if (!containsKey(k)) {
+            // 当多个线程都会读时，发现k不存在，则会并发执行put方法
+            // put()并发安全的
             return put(k, v);
-        else
+        } else {
             return get(k);
+        }
     }
 
     @Override

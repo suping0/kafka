@@ -57,7 +57,7 @@ class SystemTimer(executorName: String,
                   wheelSize: Int = 20,
                   startMs: Long = System.currentTimeMillis) extends Timer {
 
-  // timeout timer
+  // timeout timer 超时计时器
   private[this] val taskExecutor = Executors.newFixedThreadPool(1, new ThreadFactory() {
     def newThread(runnable: Runnable): Thread =
       Utils.newThread("executor-"+executorName, runnable, false)
@@ -74,6 +74,7 @@ class SystemTimer(executorName: String,
   )
 
   // Locks used to protect data structures while ticking
+  // 用于在滴答声时保护数据结构的锁
   private[this] val readWriteLock = new ReentrantReadWriteLock()
   private[this] val readLock = readWriteLock.readLock()
   private[this] val writeLock = readWriteLock.writeLock()
@@ -100,6 +101,7 @@ class SystemTimer(executorName: String,
   /*
    * Advances the clock if there is an expired bucket. If there isn't any expired bucket when called,
    * waits up to timeoutMs before giving up.
+   * 如果存在过期的bucket，则提前时钟。如果在调用时没有任何过期的bucket，则在放弃之前等待超时。
    */
   def advanceClock(timeoutMs: Long): Boolean = {
     var bucket = delayQueue.poll(timeoutMs, TimeUnit.MILLISECONDS)

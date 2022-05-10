@@ -30,12 +30,20 @@ import java.util.concurrent.{ExecutionException, ExecutorService, Executors, Fut
 /**
  * The entry point to the kafka log management subsystem. The log manager is responsible for log creation, retrieval, and cleaning.
  * All read and write operations are delegated to the individual log instances.
+ * kafka日志管理系统的入口点。日志管理器负责创建、检索和清理日志。
+ * 所有读写操作都委托给各个日志实例。
+ *
+ * 这个里面的log指的是partiton的一个副本，可以是leader/follower。
+ * 在磁盘上一个log对应着多个文件，包含数据(.log)和索引(.index)
  * 
  * The log manager maintains logs in one or more directories. New logs are created in the data directory
  * with the fewest logs. No attempt is made to move partitions after the fact or balance based on
  * size or I/O rate.
+ * 日志管理器在一个或多个目录中维护日志。
+ * 在日志最少的数据目录中创建新日志。不尝试在事后移动分区或根据大小或I/O速率平衡分区。
  * 
  * A background thread handles log retention by periodically truncating excess log segments.
+ * 后台线程通过定期截断多余的日志段来处理日志保留。
  */
 @threadsafe
 class LogManager(val logDirs: Array[File],
@@ -55,9 +63,11 @@ class LogManager(val logDirs: Array[File],
   private val logCreationOrDeletionLock = new Object
   private val logs = new Pool[TopicAndPartition, Log]()
 
+  // 创建存储log的目录
   createAndValidateLogDirs(logDirs)
   private val dirLocks = lockLogDirs(logDirs)
   private val recoveryPointCheckpoints = logDirs.map(dir => (dir, new OffsetCheckpoint(new File(dir, RecoveryPointCheckpointFile)))).toMap
+  // 恢复并加载给定数据目录中的所有日志到内存中
   loadLogs()
 
   // public, so we can access this from kafka.admin.DeleteTopicTest
@@ -68,6 +78,7 @@ class LogManager(val logDirs: Array[File],
       null
   
   /**
+   * 创建并检查给定目录的有效性
    * Create and check validity of the given directories, specifically:
    * <ol>
    * <li> Ensure that there are no duplicates in the directory list
@@ -92,6 +103,7 @@ class LogManager(val logDirs: Array[File],
   
   /**
    * Lock all the given directories
+   * 锁定所有给定目录
    */
   private def lockLogDirs(dirs: Seq[File]): Seq[FileLock] = {
     dirs.map { dir =>
@@ -105,17 +117,21 @@ class LogManager(val logDirs: Array[File],
   
   /**
    * Recover and load all logs in the given data directories
+   * 恢复并加载给定数据目录中的所有日志
    */
   private def loadLogs(): Unit = {
     info("Loading logs.")
 
+    // 初始化了多个线程池
     val threadPools = mutable.ArrayBuffer.empty[ExecutorService]
     val jobs = mutable.Map.empty[File, Seq[Future[_]]]
 
     for (dir <- this.logDirs) {
+      // 遍历配置的log日志目录
       val pool = Executors.newFixedThreadPool(ioThreads)
       threadPools.append(pool)
 
+      // 清洗关闭的file
       val cleanShutdownFile = new File(dir, Log.CleanShutdownFile)
 
       if (cleanShutdownFile.exists) {
@@ -125,11 +141,13 @@ class LogManager(val logDirs: Array[File],
           dir.getAbsolutePath)
       } else {
         // log recovery itself is being performed by `Log` class during initialization
+        // 日志恢复本身在初始化期间由“log”类执行
         brokerState.newState(RecoveringFromUncleanShutdown)
       }
 
       var recoveryPoints = Map[TopicAndPartition, Long]()
       try {
+        // 得到每个partiton的offset
         recoveryPoints = this.recoveryPointCheckpoints(dir).read
       } catch {
         case e: Exception => {
@@ -138,18 +156,30 @@ class LogManager(val logDirs: Array[File],
         }
       }
 
+      //
       val jobsForDir = for {
+        // 获取目录下的子文件
         dirContent <- Option(dir.listFiles).toList
+        // 看下是否是目录
         logDir <- dirContent if logDir.isDirectory
       } yield {
+        // 处理遍历得到的每个logDir
+        /*
+         * yield 关键字的简短总结:
+         * 针对每一次 for 循环的迭代, yield 会产生一个值，被循环记录下来 (内部实现上，像是一个缓冲区).
+         * 当循环结束后, 会返回所有 yield 的值组成的集合.
+         * 返回集合的类型与被遍历的集合类型是一致的.
+         */
         CoreUtils.runnable {
           debug("Loading log '" + logDir.getName + "'")
 
+          // 从日志的目录名中解析topic和partition
           val topicPartition = Log.parseTopicPartitionName(logDir)
           val config = topicConfigs.getOrElse(topicPartition.topic, defaultConfig)
           val logRecoveryPoint = recoveryPoints.getOrElse(topicPartition, 0L)
 
           val current = new Log(logDir, config, logRecoveryPoint, scheduler, time)
+          // 存放每个分区对应的log, 返回旧的value
           val previous = this.logs.put(topicPartition, current)
 
           if (previous != null) {
@@ -325,6 +355,7 @@ class LogManager(val logDirs: Array[File],
 
   /**
    * Make a checkpoint for all logs in provided directory.
+   * 为提供的目录中的所有日志创建一个检查点。
    */
   private def checkpointLogsInDir(dir: File): Unit = {
     val recoveryPoints = this.logsByDir.get(dir.toString)
@@ -473,6 +504,7 @@ class LogManager(val logDirs: Array[File],
 
   /**
    * Map of log dir to logs by topic and partitions in that dir
+   * 按topic and partitions中的分区将日志目录映射到日志
    */
   private def logsByDir = {
     this.logsByTopicPartition.groupBy {

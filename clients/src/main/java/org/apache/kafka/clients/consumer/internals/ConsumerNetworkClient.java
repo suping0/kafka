@@ -108,6 +108,7 @@ public class ConsumerNetworkClient implements Closeable {
         RequestFutureCompletionHandler future = new RequestFutureCompletionHandler();
         RequestHeader header = client.nextRequestHeader(api);
         RequestSend send = new RequestSend(node.idString(), header, request.toStruct());
+        // 构建带有回调函数请求，放到unsent集合中
         put(node, new ClientRequest(now, true, send, future));
         return future;
     }
@@ -346,7 +347,9 @@ public class ConsumerNetworkClient implements Closeable {
             Iterator<ClientRequest> iterator = requestEntry.getValue().iterator();
             while (iterator.hasNext()) {
                 ClientRequest request = iterator.next();
-                if (client.ready(node, now)) {
+                if (client.ready(node, now)) { // 判断连接是否建立
+                    // 和producer端，broker端一样，依托于KafkaChannel和NIO selector多路复用的机制
+                    // 将请求放到底层待发送的inFlightRequests集合中
                     client.send(request, now);
                     iterator.remove();
                     requestsSent = true;

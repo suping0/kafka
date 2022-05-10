@@ -17,6 +17,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * A wrapper for Thread that sets things up nicely
+ * 线程的包装器，可以很好地设置事情。
  */
 public class KafkaThread extends Thread {
 

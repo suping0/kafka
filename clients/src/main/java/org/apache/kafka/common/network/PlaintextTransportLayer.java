@@ -46,11 +46,23 @@ public class PlaintextTransportLayer implements TransportLayer {
         return true;
     }
 
+    /**
+     * 一旦建立好连接之后，天然的就会去监听这个连接的OP_READ事件
+     * @return
+     * @throws IOException
+     */
     @Override
     public boolean finishConnect() throws IOException {
         boolean connected = socketChannel.finishConnect();
-        if (connected)
+        if (connected) {
+            /*
+             * SeletionKey，里面封装了Selector对一个连接关注那个连接上的哪些事件，OP_CONNECT，OP_WRITE，OP_READ。
+             * & ~SelectionKey.OP_CONNECT ：取消对OP_CONNECT事件的关注，
+             * | SelectionKey.OP_READ ：增加对OP_READ事件的一个关注，
+             * 对事件的关注，主要都是通过二进制位运算来实现的。
+             */
             key.interestOps(key.interestOps() & ~SelectionKey.OP_CONNECT | SelectionKey.OP_READ);
+        }
         return connected;
     }
 
@@ -196,6 +208,7 @@ public class PlaintextTransportLayer implements TransportLayer {
      */
     @Override
     public void addInterestOps(int ops) {
+        // | ops : 就是增加一个事件的监听
         key.interestOps(key.interestOps() | ops);
 
     }
@@ -206,11 +219,13 @@ public class PlaintextTransportLayer implements TransportLayer {
      */
     @Override
     public void removeInterestOps(int ops) {
+        // & ~ops : 表示移除掉一个事件监听
         key.interestOps(key.interestOps() & ~ops);
     }
 
     @Override
     public boolean isMute() {
+        // key.interestOps() & SelectionKey.OP_READ : 是否在监听这个事件，是返回真
         return key.isValid() && (key.interestOps() & SelectionKey.OP_READ) == 0;
     }
 

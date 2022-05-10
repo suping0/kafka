@@ -19,6 +19,7 @@ import org.apache.kafka.common.TopicPartition;
 /**
  * A callback interface that the user can implement to trigger custom actions when the set of partitions assigned to the
  * consumer changes.
+ * 用户可以实现的回调接口，当分配给使用者的分区集更改时触发自定义操作。
  * <p>
  * This is applicable when the consumer is having Kafka auto-manage group membership. If the consumer directly assigns partitions,
  * those partitions will never be reassigned and this callback is not applicable.
@@ -92,6 +93,8 @@ public interface ConsumerRebalanceListener {
      * A callback method the user can implement to provide handling of customized offsets on completion of a successful
      * partition re-assignment. This method will be called after an offset re-assignment completes and before the
      * consumer starts fetching data.
+     * 用户可以实现的回调方法，用于在成功完成分区重新分配时提供对自定义偏移量的处理。
+     * 此方法将在偏移量重新分配完成之后、使用者开始获取数据之前调用。
      * <p>
      * It is guaranteed that all the processes in a consumer group will execute their
      * {@link #onPartitionsRevoked(Collection)} callback before any instance executes its

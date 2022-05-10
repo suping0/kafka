@@ -67,9 +67,12 @@ class LogSegment(val log: FileMessageSet,
   /**
    * Append the given messages starting with the given offset. Add
    * an entry to the index if needed.
+   * 附加以给定偏移量开始的指定消息。
+   * 如果需要，在索引中添加一个条目。
    *
    * It is assumed this method is being called from within a lock.
    *
+   * 一个稀疏索引的元素代表一条数据的物理位置
    * @param offset The first offset in the message set.
    * @param messages The messages to append.
    */
@@ -77,11 +80,15 @@ class LogSegment(val log: FileMessageSet,
   def append(offset: Long, messages: ByteBufferMessageSet) {
     if (messages.sizeInBytes > 0) {
       trace("Inserting %d bytes at offset %d at position %d".format(messages.sizeInBytes, offset, log.sizeInBytes()))
+      // 如果达到的间隔字节数，则往索引文件中写一个索引(entry)
       // append an entry to the index (if needed)
+      // indexIntervalBytes 默认值4096；两个entries间隔的近似字节数
       if(bytesSinceLastIndexEntry > indexIntervalBytes) {
+        // 先写index文件。index使用的是稀疏索引，也就是说，它可能不包含日志中所有消息的条目的磁盘索引位置。
         index.append(offset, log.sizeInBytes())
         this.bytesSinceLastIndexEntry = 0
       }
+      // 向segment文件中写batch中的数据
       // append the messages
       log.append(messages)
       this.bytesSinceLastIndexEntry += messages.sizeInBytes
@@ -90,9 +97,11 @@ class LogSegment(val log: FileMessageSet,
 
   /**
    * Find the physical file position for the first message with offset >= the requested offset.
+   * 找到偏移量>=请求的偏移量的第一条消息的物理文件位置。
    *
    * The lowerBound argument is an optimization that can be used if we already know a valid starting position
    * in the file higher than the greatest-lower-bound from the index.
+   * lowerBound参数是一种优化，如果我们已经知道文件中的有效起始位置高于索引的最大下限，就可以使用它。
    *
    * @param offset The offset we want to translate
    * @param startingFilePosition A lower bound on the file position from which to begin the search. This is purely an optimization and
@@ -102,13 +111,17 @@ class LogSegment(val log: FileMessageSet,
    */
   @threadsafe
   private[log] def translateOffset(offset: Long, startingFilePosition: Int = 0): OffsetPosition = {
-    val mapping = index.lookup(offset)
+    // 使用二分查找，找到目标稀疏索引
+    val mapping: OffsetPosition = index.lookup(offset)
+    // 从稀疏索引处，找到目标数据的磁盘位置
     log.searchFor(offset, max(mapping.position, startingFilePosition))
   }
 
   /**
    * Read a message set from this segment beginning with the first offset >= startOffset. The message set will include
    * no more than maxSize bytes and will end before maxOffset if a maxOffset is specified.
+   * 从第一个偏移量>=startOffset开始从此段读取消息集。如果指定了maxOffset，
+   * 则消息集包含的字节数将不超过maxSize，并且将在maxOffset之前结束。
    *
    * @param startOffset A lower bound on the first offset to include in the message set we read
    * @param maxSize The maximum number of bytes to include in the message set we read
@@ -124,7 +137,10 @@ class LogSegment(val log: FileMessageSet,
       throw new IllegalArgumentException("Invalid max size for log read (%d)".format(maxSize))
 
     val logSize = log.sizeInBytes // this may change, need to save a consistent copy
-    val startPosition = translateOffset(startOffset)
+    /*
+     * 从内存中的稀疏索引文件，找到读取数据的物理位置
+     */
+    val startPosition: OffsetPosition = translateOffset(startOffset)
 
     // if the start position is already off the end of the log, return null
     if(startPosition == null)
@@ -157,6 +173,10 @@ class LogSegment(val log: FileMessageSet,
         min(min(maxPosition, endPosition) - startPosition.position, maxSize).toInt
     }
 
+    /*
+     * NIO来说 ，主要知道一个文件读取的起始的position以及结尾的position，就可以了，此时就可以基于NIO读取文件的一段数据，变成ByteBuffer，MessageSet
+     * log.read(startPosition.position, length)  读取磁盘文件的数据, 返回一个消息集，该消息集是从给定位置开始并以给定大小限制进入该集的视图。
+     */
     FetchDataInfo(offsetMetadata, log.read(startPosition.position, length))
   }
 
@@ -250,6 +270,7 @@ class LogSegment(val log: FileMessageSet,
   def flush() {
     LogFlushStats.logFlushTimer.time {
       log.flush()
+      // 强制将对此缓冲区内容所做的任何更改写入包含映射文件的存储设备。
       index.flush()
     }
   }

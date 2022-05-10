@@ -64,9 +64,14 @@ case class MagicAndTimestamp(magic: Byte, timestamp: Long)
  * A set of messages with offsets. A message set has a fixed serialized form, though the container
  * for the bytes could be either in-memory or on disk. The format of each message is
  * as follows:
+ * 具有偏移量的一组消息。
+ * 消息集具有固定的序列化形式，尽管字节的容器可以在内存中，也可以在磁盘上。
+ * 每条信息的格式如下：
  * 8 byte message offset number
  * 4 byte size containing an integer N
  * N message bytes as described in the Message class
+ *
+ * 具体的数据：kafka.message.Message
  */
 abstract class MessageSet extends Iterable[MessageAndOffset] {
 

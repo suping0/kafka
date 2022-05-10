@@ -56,6 +56,7 @@ final class InFlightRequests {
 
     /**
      * Get the oldest request (the one that that will be completed next) for the given node
+     * 获取给定节点的最早请求（下一个将完成的请求）
      */
     public ClientRequest completeNext(String node) {
         return requestQueue(node).pollLast();
@@ -80,12 +81,22 @@ final class InFlightRequests {
 
     /**
      * Can we send more requests to this node?
-     * 
+     * 我们可以向这个节点发送更多请求吗？
      * @param node Node in question
      * @return true iff we have no requests still being sent to the given node
      */
     public boolean canSendMore(String node) {
         Deque<ClientRequest> queue = requests.get(node);
+        /*
+         * 必须得先判断一下，这个Broker上一次发送的Request请求是否发送完毕了，那个request中的数据是否发送完了呢？
+         * 即使发送完毕了，还得限制为最多只发送5个request是没有收到响应的。
+         * 如果说上一次 request出现了类似拆包的问题，一次请求没有发送完毕，
+         * 此时下次就不会继续往这个broker发送请求了，但是此时针对这个broker还是保持着OP_WRITE的监听，
+         * 下次调用poll，会发现对这个broker可以再次执行WRITABLE事件。
+         *
+         * 大不了再次对SocketChannel调用write方法，把ByteBuffer里剩余的数据继续往Broker去写，上述的过程重复多次，一定会把这个请求发送完毕的。
+         * 继续执行：Send send = channel.write();
+         */
         return queue == null || queue.isEmpty() ||
                (queue.peekFirst().request().completed() && queue.size() < this.maxInFlightRequestsPerConnection);
     }
@@ -127,7 +138,7 @@ final class InFlightRequests {
 
     /**
      * Returns a list of nodes with pending inflight request, that need to be timed out
-     *
+     * 返回具有挂起的、需要超时的飞行中请求的节点列表
      * @param now current time in milliseconds
      * @param requestTimeout max time to wait for the request to be completed
      * @return list of nodes

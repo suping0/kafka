@@ -30,6 +30,9 @@ import org.apache.kafka.common.security.JaasUtils
  * session expiration, instead it assumes the caller will handle it by probably try to re-elect again. If the existing
  * leader is dead, this class will handle automatic re-election and if it succeeds, it invokes the leader state change
  * callback
+ * 此类处理基于临时路径的基于zookeeper的领导人选举。
+ * 选举模块不处理会话到期，而是假设调用者将通过可能再次尝试重新选举来处理它。
+ * 如果现有的领导人已经死亡，这个类将处理自动重新选举，如果成功，它将调用领导人状态更改回调。
  */
 class ZookeeperLeaderElector(controllerContext: ControllerContext,
                              electionPath: String,
@@ -46,7 +49,13 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
 
   def startup {
     inLock(controllerContext.controllerLock) {
+      /*
+      electionPath 是代表controller的znode
+      controller监听器，该节点被创建和删除都会被感知到.
+      leaderChangeListener : controller节点发生改变，则会回调该实例的回调函数
+       */
       controllerContext.zkUtils.zkClient.subscribeDataChanges(electionPath, leaderChangeListener)
+      // 发起在zk上的选举
       elect
     }
   }
@@ -61,28 +70,46 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
   def elect: Boolean = {
     val timestamp = SystemTime.milliseconds.toString
     val electString = Json.encode(Map("version" -> 1, "brokerid" -> brokerId, "timestamp" -> timestamp))
-   
+
+    /*
+    尝试从zk上读取controller的ID
+     */
    leaderId = getControllerID 
     /* 
      * We can get here during the initial startup and the handleDeleted ZK callback. Because of the potential race condition, 
      * it's possible that the controller has already been elected when we get here. This check will prevent the following 
      * createEphemeralPath method from getting into an infinite loop if this broker is already the controller.
+     * 我们可以在初始启动和handledeletedzk回调期间到达这里。
+     * 由于潜在的竞争条件，当我们到达这里时，控制器可能已经被选中。
+     * 如果此代理已经是控制器，则此检查将阻止以下createEphemeralPath方法进入无限循环。
      */
     if(leaderId != -1) {
+      // 集群中已经有broker成为了controller
        debug("Broker %d has been elected as leader, so stopping the election process.".format(leaderId))
        return amILeader
     }
 
+    // 尝试去选取成为controller
     try {
+      /*
+      尝试去创建controller这个znode,
+      electString 表示 "version" -> 1, "brokerid" -> brokerId, "timestamp" -> timestamp
+      包含了当前brokerId。
+       */
       val zkCheckedEphemeral = new ZKCheckedEphemeral(electionPath,
                                                       electString,
                                                       controllerContext.zkUtils.zkConnection.getZookeeper,
                                                       JaasUtils.isZkSecurityEnabled())
+      // zk保证controller这个znode只会被一个broker创建;
+      // patch : "/brokers/ids/" + brokerId
       zkCheckedEphemeral.create()
       info(brokerId + " successfully elected as leader")
+      // 如果创建成功，则将leaderId设置为当前brokerId
       leaderId = brokerId
+      // 执行实例化是传入的函数：kafka.controller.KafkaController.onControllerFailover
       onBecomingLeader()
     } catch {
+          // 说明controller创建失败
       case e: ZkNodeExistsException =>
         // If someone else has written the path, then
         leaderId = getControllerID 
@@ -117,6 +144,7 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
   class LeaderChangeListener extends IZkDataListener with Logging {
     /**
      * Called when the leader information stored in zookeeper has changed. Record the new leader in memory
+     * 存储在zookeeper中的leader信息发生更改时调用。在内存中记下新leader
      * @throws Exception On any error.
      */
     @throws(classOf[Exception])
@@ -133,6 +161,7 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
 
     /**
      * Called when the leader information stored in zookeeper has been delete. Try to elect as the leader
+     * 当存储在zookeeper中的leader信息被删除时调用。试着选为leader
      * @throws Exception
      *             On any error.
      */
@@ -141,8 +170,11 @@ class ZookeeperLeaderElector(controllerContext: ControllerContext,
       inLock(controllerContext.controllerLock) {
         debug("%s leader change listener fired for path %s to handle data deleted: trying to elect as a leader"
           .format(brokerId, dataPath))
-        if(amILeader)
+        if(amILeader) {
+          // 当前broker是leader, 执行实例化是传入的方法：kafka.controller.KafkaController.onControllerResignation
           onResigningAsLeader()
+        }
+        // 如果当前节点不是leader，则会重新触发选举
         elect
       }
     }

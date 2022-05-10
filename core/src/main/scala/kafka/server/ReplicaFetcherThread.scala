@@ -72,6 +72,7 @@ class ReplicaFetcherThread(name: String,
   // we need to include both the broker id and the fetcher id
   // as the metrics tag to avoid metric name conflicts with
   // more than one fetcher thread to the same broker
+  // 我们需要将broker id和fetcher id都包含为metrics标记，以避免度量名称与同一个代理的多个fetcher线程冲突
   private val networkClient = {
     val channelBuilder = ChannelBuilders.create(
       brokerConfig.interBrokerSecurityProtocol,
@@ -109,7 +110,13 @@ class ReplicaFetcherThread(name: String,
     networkClient.close()
   }
 
-  // process fetched data
+  /**
+   * process fetched data
+   * 处理fetch到的数据
+   * @param topicAndPartition
+   * @param fetchOffset
+   * @param partitionData
+   */
   def processPartitionData(topicAndPartition: TopicAndPartition, fetchOffset: Long, partitionData: PartitionData) {
     try {
       val TopicAndPartition(topic, partitionId) = topicAndPartition
@@ -122,14 +129,24 @@ class ReplicaFetcherThread(name: String,
       if (logger.isTraceEnabled)
         trace("Follower %d has replica log end offset %d for partition %s. Received %d messages and leader hw %d"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, topicAndPartition, messageSet.sizeInBytes, partitionData.highWatermark))
+      /*
+      将数据appenf到本地磁盘, 然后更新LEO
+       */
       replica.log.get.append(messageSet, assignOffsets = false)
       if (logger.isTraceEnabled)
         trace("Follower %d has replica log end offset %d after appending %d bytes of messages for partition %s"
           .format(replica.brokerId, replica.logEndOffset.messageOffset, messageSet.sizeInBytes, topicAndPartition))
+      /*
+      在leader broker返回fetch响应时（LogReadResult），包含了自身的hw。
+      根据自身的hw和从leader borker得到的hw，取较小值
+       */
       val followerHighWatermark = replica.logEndOffset.messageOffset.min(partitionData.highWatermark)
+      /*
       // for the follower replica, we do not need to keep
       // its segment base offset the physical position,
       // these values will be computed upon making the leader
+      // 对于follower replica，我们不需要保持其段基偏移的物理位置，这些值将在生成leader时计算
+       */
       replica.highWatermark = new LogOffsetMetadata(followerHighWatermark)
       if (logger.isTraceEnabled)
         trace("Follower %d set replica high watermark for partition [%s,%d] to %s"
@@ -226,12 +243,21 @@ class ReplicaFetcherThread(name: String,
   }
 
   protected def fetch(fetchRequest: FetchRequest): Map[TopicAndPartition, PartitionData] = {
+    // 发送fetch请求
     val clientResponse = sendRequest(ApiKeys.FETCH, Some(fetchRequestVersion), fetchRequest.underlying)
+
     new FetchResponse(clientResponse.responseBody).responseData.asScala.map { case (key, value) =>
       TopicAndPartition(key.topic, key.partition) -> new PartitionData(value)
     }
   }
 
+  /**
+   * fetch线程启动后执行的方法
+   * @param apiKey
+   * @param apiVersion
+   * @param request
+   * @return
+   */
   private def sendRequest(apiKey: ApiKeys, apiVersion: Option[Short], request: AbstractRequest): ClientResponse = {
     import kafka.utils.NetworkClientBlockingOps._
     val header = apiVersion.fold(networkClient.nextRequestHeader(apiKey))(networkClient.nextRequestHeader(apiKey, _))
@@ -241,6 +267,7 @@ class ReplicaFetcherThread(name: String,
       else {
         val send = new RequestSend(sourceBroker.id.toString, header, request.toStruct)
         val clientRequest = new ClientRequest(time.milliseconds(), true, send, null)
+        // 同步阻塞发送fetch请求
         networkClient.blockingSendAndReceive(clientRequest)(time)
       }
     }
@@ -267,14 +294,31 @@ class ReplicaFetcherThread(name: String,
     }
   }
 
+  /**
+   *
+   * @param partitionMap
+   * @return
+   */
   protected def buildFetchRequest(partitionMap: Map[TopicAndPartition, PartitionFetchState]): FetchRequest = {
     val requestMap = mutable.Map.empty[TopicPartition, JFetchRequest.PartitionData]
 
     partitionMap.foreach { case ((TopicAndPartition(topic, partition), partitionFetchState)) =>
-      if (partitionFetchState.isActive)
+      if (partitionFetchState.isActive) {
+        /*
+         * 需要指定每个分区从哪个offset值开始拉取
+         * fetchSize 默认为：1024 * 1024；最多一次拉取的数据为1M。
+         * 一个请求包含对于一个副本的同步，以及一次只能拉取1M的数据
+         * partitionFetchState.offset  封装了从副本的什么位置开始拉数据
+         */
         requestMap(new TopicPartition(topic, partition)) = new JFetchRequest.PartitionData(partitionFetchState.offset, fetchSize)
+      }
     }
 
+    /*
+     * 创建副本数据同步的请求
+     * minBytes 默认1，至少要拉取1个字节数据，
+     * maxWait(ReplicaFetchWaitMaxMs) = 500ms，follower replicas发出的每个fetcher request的最大等待时间
+     */
     new FetchRequest(new JFetchRequest(replicaId, maxWait, minBytes, requestMap.asJava))
   }
 

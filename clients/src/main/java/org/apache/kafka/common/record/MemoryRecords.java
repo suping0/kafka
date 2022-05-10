@@ -33,9 +33,11 @@ public class MemoryRecords implements Records {
     private final Compressor compressor;
 
     // the write limit for writable buffer, which may be smaller than the buffer capacity
+    // 可写缓冲区的写入限制，它可能小于缓冲区容量
     private final int writeLimit;
 
     // the capacity of the initial buffer, which is only used for de-allocation of writable records
+    // 初始缓冲区的容量，它只用于取消可写记录的分配。
     private final int initialCapacity;
 
     // the underlying buffer used for read; while the records are still writable it is null
@@ -97,6 +99,7 @@ public class MemoryRecords implements Records {
         int size = Record.recordSize(key, value);
         compressor.putLong(offset);
         compressor.putInt(size);
+        // 写record
         long crc = compressor.putRecord(timestamp, key, value);
         compressor.recordWritten(size + Records.LOG_OVERHEAD);
         return crc;
@@ -104,22 +107,29 @@ public class MemoryRecords implements Records {
 
     /**
      * Check if we have room for a new record containing the given key/value pair
+     * 检查我们是否有空间给包含给定键/值对的新记录。
      *
      * Note that the return value is based on the estimate of the bytes written to the compressor, which may not be
      * accurate if compression is really used. When this happens, the following append may cause dynamic buffer
      * re-allocation in the underlying byte buffer stream.
+     * 请注意，返回值是基于写入压缩器的字节的估计值，如果真的使用了压缩，这个值可能不准确。
+     * 当这种情况发生时，下面的追加可能会导致底层字节缓冲流中的动态缓冲区重新分配。
      *
      * There is an exceptional case when appending a single message whose size is larger than the batch size, the
      * capacity will be the message size which is larger than the write limit, i.e. the batch size. In this case
      * the checking should be based on the capacity of the initialized buffer rather than the write limit in order
      * to accept this single record.
+     * 有一种特殊的情况，当附加一个大小大于批次大小的单条消息时，容量将是大于写入限制的消息大小，即批次大小。
+     * 在这种情况下，检查应该基于初始化缓冲区的容量而不是写入限制，以便接受这条单条记录。
      */
     public boolean hasRoomFor(byte[] key, byte[] value) {
         if (!this.writable)
             return false;
 
         return this.compressor.numRecordsWritten() == 0 ?
+            // 检查是否大于当前buffer
             this.initialCapacity >= Records.LOG_OVERHEAD + Record.recordSize(key, value) :
+            // 当附加一个大小大于批次大小的单条消息时, 检查应该基于初始化缓冲区的容量而不是写入限制
             this.writeLimit >= this.compressor.estimatedBytesWritten() + Records.LOG_OVERHEAD + Record.recordSize(key, value);
     }
 

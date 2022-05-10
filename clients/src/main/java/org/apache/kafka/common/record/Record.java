@@ -154,7 +154,22 @@ public final class Record {
         }
     }
 
+    /**
+     * 是严格的按照二进制协议的规范，他规范里规定了，
+     * 就是先是几个字节的offset，然后是几个字节的size，然后是几个字节的crc，接着是几个字节的magic，
+     * 以此类推，他就是完全按照规范来写入ByteBuffer里去的
+     *
+     * offset | size | crc | magic | attibutes | timestamp | key size | key | value size | value
+     */
     public static void write(Compressor compressor, long crc, byte attributes, long timestamp, byte[] key, byte[] value, int valueOffset, int valueSize) {
+        /*
+         * compressor 在实例化时
+         * 1. ByteBufferOutputStream包裹了ByteBuffer，持有一个针对ByteBuffer的输出流，
+         *    接着会把ByteBufferOutputStream给包裹在一个压缩流里，gzip、lz4、snappy，如果是包裹在压缩流里，写入的时候会先进入压缩流的缓冲区
+         * 2. 压缩流会把一条消息放在缓冲区里，用压缩算法给压缩了，再写入底层的ByteBufferOutputStream里去
+         * 3. 如果是非压缩的模式，最最普通的情况下，就是DataOutputStream包裹了ByteBufferOutputSteram，
+         *    然后写入数据，Long、Byte、String，都会在底层转换为字节进入到ByteBuffer里去
+         */
         // write crc
         compressor.putInt((int) (crc & 0xffffffffL));
         // write magic value

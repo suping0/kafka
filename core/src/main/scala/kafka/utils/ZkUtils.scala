@@ -54,6 +54,7 @@ object ZkUtils {
   val EntityConfigChangesPath = "/config/changes"
 
   def apply(zkUrl: String, sessionTimeout: Int, connectionTimeout: Int, isZkSecurityEnabled: Boolean): ZkUtils = {
+    // 创建zk客户端和连接
     val (zkClient, zkConnection) = createZkClientAndConnection(zkUrl, sessionTimeout, connectionTimeout)
     new ZkUtils(zkClient, zkConnection, isZkSecurityEnabled)
   }
@@ -99,6 +100,9 @@ object ZkUtils {
    * Get calls that only depend on static paths
    */
   def getTopicPath(topic: String): String = {
+    /*
+    BrokerTopicsPath : /brokers/topics/${topic}
+     */
     ZkUtils.BrokerTopicsPath + "/" + topic
   }
 
@@ -274,6 +278,7 @@ class ZkUtils(val zkClient: ZkClient,
                          jmxPort: Int,
                          rack: Option[String],
                          apiVersion: ApiVersion) {
+    // BrokerIdsPath : "/brokers/ids"
     val brokerIdPath = BrokerIdsPath + "/" + id
     val timestamp = SystemTime.milliseconds.toString
 
@@ -601,6 +606,11 @@ class ZkUtils(val zkClient: ZkClient,
     ret
   }
 
+  /**
+   * 得到topics的副本分配的信息
+   * @param topics
+   * @return
+   */
   def getReplicaAssignmentForTopics(topics: Seq[String]): mutable.Map[TopicAndPartition, Seq[Int]] = {
     val ret = new mutable.HashMap[TopicAndPartition, Seq[Int]]
     topics.foreach { topic =>
@@ -610,9 +620,11 @@ class ZkUtils(val zkClient: ZkClient,
           Json.parseFull(jsonPartitionMap) match {
             case Some(m) => m.asInstanceOf[Map[String, Any]].get("partitions") match {
               case Some(repl)  =>
-                val replicaMap = repl.asInstanceOf[Map[String, Seq[Int]]]
+                val replicaMap: Map[String, Seq[Int]] = repl.asInstanceOf[Map[String, Seq[Int]]]
                 for((partition, replicas) <- replicaMap){
+                  // partition -> 每个partton的副本数组（brokerId）
                   ret.put(TopicAndPartition(topic, partition.toInt), replicas)
+                  // 分配topic的partition的副本所在的brokerId
                   debug("Replicas assigned to topic [%s], partition [%s] are [%s]".format(topic, partition, replicas))
                 }
               case None =>
@@ -1094,6 +1106,9 @@ class ZKCheckedEphemeral(path: String,
   }
 
   def create() {
+    /*
+    patch : "/brokers/ids/" + brokerId
+     */
     val index = path.indexOf('/', 1) match {
         case -1 => path.length
         case x : Int => x

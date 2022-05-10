@@ -27,11 +27,18 @@ import java.util.Set;
  * as the group coordinator. The coordinator selects one member to perform the group assignment and
  * propagates the subscriptions of all members to it. Then {@link #assign(Cluster, Map)} is called
  * to perform the assignment and the results are forwarded back to each respective members
+ * 此接口用于定义在{@link org.apache.kafka.clients.consumer.KafkaConsumer}中使用的消费分区分配.
  *
- * In some cases, it is useful to forward additional metadata to the assignor in order to make
- * assignment decisions. For this, you can override {@link #subscription(Set)} and provide custom
- * userData in the returned Subscription. For example, to have a rack-aware assignor, an implementation
- * can use this user data to forward the rackId belonging to each member.
+ * 消费者组的成员订阅他们感兴趣的topic，并将订阅转发给作为group coordinator的Kafka broker。
+ * coordinator选择一个member(消费者组中的一员)来执行组分配，并向其传播所有成员的订阅。
+ * 然后调用{@link #assign(Cluster, Map)}来执行assignment，结果被转发回各个members。
+ *
+ * In some cases, it is useful to forward additional metadata to the assignor in order to make assignment decisions.
+ * For this, you can override {@link #subscription(Set)} and provide custom userData in the returned Subscription.
+ * For example, to have a rack-aware assignor, an implementation can use this user data to forward the rackId belonging to each member.
+ * 在某些情况下，将额外的元数据转发给分配者(assignor)以做出分配决策是有用的。
+ * 为此，可以重写{@link #subscription(Set)}，并在返回的订阅中提供自定义用户数据。
+ * 例如，为了具有机架感知的assignor，实现可以使用此用户数据转发属于每个成员的rackId。
  */
 public interface PartitionAssignor {
 
@@ -47,10 +54,12 @@ public interface PartitionAssignor {
 
     /**
      * Perform the group assignment given the member subscriptions and current cluster metadata.
+     * 在给定成员订阅和当前群集元数据的情况下执行组分配。
      * @param metadata Current topic/broker metadata known by consumer
      * @param subscriptions Subscriptions from all members provided through {@link #subscription(Set)}
      * @return A map from the members to their respective assignment. This should have one entry
      *         for all members who in the input subscription map.
+     *         从成员到各自assignment的map映射。对于输入订阅映射中的所有成员，应该有一个条目。
      */
     Map<String, Assignment> assign(Cluster metadata, Map<String, Subscription> subscriptions);
 

@@ -34,6 +34,7 @@ class KafkaServerStartable(val serverConfig: KafkaConfig) extends Logging {
 
   def startup() {
     try {
+      // 启动broker server，启动相关的组件
       server.startup()
     }
     catch {

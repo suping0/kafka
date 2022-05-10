@@ -51,6 +51,7 @@ public class Producer extends Thread {
                     messageStr), new DemoCallBack(startTime, messageNo, messageStr));
             } else { // Send synchronously
                 try {
+                    // 将massage发送到缓存中，异步发送
                     producer.send(new ProducerRecord<>(topic,
                         messageNo,
                         messageStr)).get();

@@ -72,8 +72,12 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
     info("Started partition state machine with initial state -> " + partitionState.toString())
   }
 
-  // register topic and partition change listeners
+  /*
+  register topic and partition change listeners 注册topic和partiton更改侦听器
+  监听zk相应目录下znode的改变
+   */
   def registerListeners() {
+    // 注册topic path新增和更新
     registerTopicChangeListener()
     if(controller.config.deleteTopicEnable)
       registerDeleteTopicListener()
@@ -141,10 +145,13 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
                          callbacks: Callbacks = (new CallbackBuilder).build) {
     info("Invoking state change to %s for partitions %s".format(targetState, partitions.mkString(",")))
     try {
+      // 如果上一批不是空的，则引发错误
       brokerRequestBatch.newBatch()
       partitions.foreach { topicAndPartition =>
+        // 更新分区的状态
         handleStateChange(topicAndPartition.topic, topicAndPartition.partition, targetState, leaderSelector, callbacks)
       }
+      // 发送请求给controller 更新metadata
       brokerRequestBatch.sendRequestsToBrokers(controller.epoch)
     }catch {
       case e: Throwable => error("Error while moving some partitions to %s state".format(targetState), e)
@@ -154,7 +161,10 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
 
   /**
    * This API exercises the partition's state machine. It ensures that every state transition happens from a legal
-   * previous state to the target state. Valid state transitions are:
+   * previous state to the target state.
+   * 这个 API exercises the partition's分区的状态机。它确保每个状态从合法的前一个状态过渡到目标状态。
+   *
+   * Valid state transitions are:
    * NonExistentPartition -> NewPartition:
    * --load assigned replicas from ZK to controller cache
    *
@@ -185,6 +195,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
                                               .format(controllerId, controller.epoch, topicAndPartition, targetState))
     val currState = partitionState.getOrElseUpdate(topicAndPartition, NonExistentPartition)
     try {
+      // 根据分区的状态变化过程，执行不同的处理方法
       targetState match {
         case NewPartition =>
           // pre: partition did not exist before this
@@ -199,9 +210,14 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
           assertValidPreviousStates(topicAndPartition, List(NewPartition, OnlinePartition, OfflinePartition), OnlinePartition)
           partitionState(topicAndPartition) match {
             case NewPartition =>
-              // initialize leader and isr path for new partition
+              /*
+              initialize leader and isr path for new partition 初始化新分区的引线和isr路径
+               */
               initializeLeaderAndIsrForPartition(topicAndPartition)
             case OfflinePartition =>
+              /*
+              执行选举。如果分区是因为Broker宕机导致下线，则重新选举leader。
+               */
               electLeaderForPartition(topic, partition, leaderSelector)
             case OnlinePartition => // invoked when the leader needs to be re-elected
               electLeaderForPartition(topic, partition, leaderSelector)
@@ -266,8 +282,9 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
   }
 
   /**
-   * Invoked on the NewPartition->OnlinePartition state change. When a partition is in the New state, it does not have
-   * a leader and isr path in zookeeper. Once the partition moves to the OnlinePartition state, its leader and isr
+   * Invoked on the NewPartition->OnlinePartition state change.
+   * When a partition is in the New state, it does not have a leader and isr path in zookeeper.
+   * Once the partition moves to the OnlinePartition state, its leader and isr
    * path gets initialized and it never goes back to the NewPartition state. From here, it can only go to the
    * OfflinePartition state.
    * @param topicAndPartition   The topic/partition whose leader and isr path is to be initialized
@@ -283,6 +300,9 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
         stateChangeLogger.error("Controller %d epoch %d ".format(controllerId, controller.epoch) + failMsg)
         throw new StateChangeFailedException(failMsg)
       case _ =>
+        /*
+        创建新的leader，更新isr
+         */
         debug("Live assigned replicas for partition %s are: [%s]".format(topicAndPartition, liveAssignedReplicas))
         // make the first replica in the list of assigned replicas, the leader
         val leader = liveAssignedReplicas.head
@@ -341,7 +361,10 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
           stateChangeLogger.error("Controller %d epoch %d ".format(controllerId, controller.epoch) + failMsg)
           throw new StateChangeFailedException(failMsg)
         }
-        // elect new leader or throw exception
+        /*
+        elect new leader or throw exception
+        重新选取leder。从isr中取出一个follower，如果isr中没有，则找一个活着的follower。
+         */
         val (leaderAndIsr, replicas) = leaderSelector.selectLeader(topicAndPartition, currentLeaderAndIsr)
         val (updateSucceeded, newVersion) = ReplicationUtils.updateLeaderAndIsr(zkUtils, topic, partition,
           leaderAndIsr, controller.epoch, currentLeaderAndIsr.zkVersion)
@@ -409,6 +432,7 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
 
   /**
    * This is the zookeeper listener that triggers all the state transitions for a partition
+   * 这是zookeeper侦听器，它触发分区的所有状态转换
    */
   class TopicChangeListener extends IZkChildListener with Logging {
     this.logIdent = "[TopicChangeListener on Controller " + controller.config.brokerId + "]: "
@@ -426,15 +450,20 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
             val newTopics = currentChildren -- controllerContext.allTopics
             val deletedTopics = controllerContext.allTopics -- currentChildren
             controllerContext.allTopics = currentChildren
+            // 从zk中读取分区的副本信息
+            val addedPartitionReplicaAssignment: mutable.Map[TopicAndPartition, Seq[Int]] = zkUtils.getReplicaAssignmentForTopics(newTopics.toSeq)
 
-            val addedPartitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(newTopics.toSeq)
             controllerContext.partitionReplicaAssignment = controllerContext.partitionReplicaAssignment.filter(p =>
               !deletedTopics.contains(p._1.topic))
             controllerContext.partitionReplicaAssignment.++=(addedPartitionReplicaAssignment)
             info("New topics: [%s], deleted topics: [%s], new partition replica assignment [%s]".format(newTopics,
               deletedTopics, addedPartitionReplicaAssignment))
-            if(newTopics.size > 0)
+            if(newTopics.size > 0) {
+              /*
+              创建新的topic; 发送请求给controller 更新metadata
+               */
               controller.onNewTopicCreation(newTopics, addedPartitionReplicaAssignment.keySet.toSet)
+            }
           } catch {
             case e: Throwable => error("Error while handling new topic", e )
           }

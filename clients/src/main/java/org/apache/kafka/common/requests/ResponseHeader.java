@@ -42,6 +42,10 @@ public class ResponseHeader extends AbstractRequestResponse {
     public ResponseHeader(int correlationId) {
         super(new Struct(Protocol.RESPONSE_HEADER));
         struct.set(CORRELATION_KEY_FIELD, correlationId);
+        /*
+         * correlation_id，是全局唯一的，用来标识一次请求的，也就是说你发送请求的时候，就会带过去这个东东，读取到的响应，
+         * 首先一定是可以读取到这个correlation_id的，就知道对应的是哪一次请求。
+         */
         this.correlationId = correlationId;
     }
 

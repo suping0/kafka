@@ -68,6 +68,8 @@ import java.util.regex.Pattern;
  * It will transparently handle the failure of servers in the Kafka cluster, and transparently adapt as partitions of
  * data it fetches migrate within the cluster. This client also interacts with the server to allow groups of
  * consumers to load balance consumption using consumer groups (as described below).
+ * 它将透明地处理Kafka集群中服务器的故障，并透明地适应它获取的数据分区在集群中迁移。
+ * 此客户端还与服务器交互，以允许groups of consumers使用consumer groups（如下所述）来负载平衡消耗。
  * <p>
  * The consumer maintains TCP connections to the necessary brokers to fetch data.
  * Failure to close the consumer after use will leak these connections.
@@ -105,6 +107,9 @@ import java.util.regex.Pattern;
  * This is achieved by balancing the partitions between all members in the consumer group so that each partition is
  * assigned to exactly one consumer in the group. So if there is a topic with four partitions, and a consumer group with two
  * processes, each process would consume from two partitions.
+ * 这是通过平衡使用者组中所有成员之间的分区来实现的，这样每个分区就只分配给组中的一个使用者。
+ * 因此，如果有一个主题有四个分区，一个使用者组有两个进程，那么每个进程都将使用两个分区。
+ *
  * <p>
  * Membership in a consumer group is maintained dynamically: if a process fails, the partitions assigned to it will
  * be reassigned to other consumers in the same group. Similarly, if a new consumer joins the group, partitions will be moved
@@ -505,9 +510,15 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     private static final String JMX_PREFIX = "kafka.consumer";
 
     private final String clientId;
+    /*
+    此类管理与使用者协调器的协调过程。
+     */
     private final ConsumerCoordinator coordinator;
     private final Deserializer<K> keyDeserializer;
     private final Deserializer<V> valueDeserializer;
+    /*
+    这个类管理brokers的fetch 过程。
+     */
     private final Fetcher<K, V> fetcher;
     private final ConsumerInterceptors<K, V> interceptors;
 
@@ -598,13 +609,15 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             this.requestTimeoutMs = config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG);
             int sessionTimeOutMs = config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG);
             int fetchMaxWaitMs = config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG);
-            if (this.requestTimeoutMs <= sessionTimeOutMs || this.requestTimeoutMs <= fetchMaxWaitMs)
+            if (this.requestTimeoutMs <= sessionTimeOutMs || this.requestTimeoutMs <= fetchMaxWaitMs) {
                 throw new ConfigException(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG + " should be greater than " + ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG + " and " + ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG);
+            }
             this.time = new SystemTime();
 
             String clientId = config.getString(ConsumerConfig.CLIENT_ID_CONFIG);
-            if (clientId.length() <= 0)
+            if (clientId.length() <= 0) {
                 clientId = "consumer-" + CONSUMER_CLIENT_ID_SEQUENCE.getAndIncrement();
+            }
             this.clientId = clientId;
             Map<String, String> metricsTags = new LinkedHashMap<>();
             metricsTags.put("client-id", clientId);
@@ -768,6 +781,9 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * assigned partitions. <b>Topic subscriptions are not incremental. This list will replace the current
      * assignment (if there is one).</b> Note that it is not possible to combine topic subscription with group management
      * with manual partition assignment through {@link #assign(Collection)}.
+     * 订阅给定的主题列表以获得动态分配的分区。
+     * 主题订阅不是增量订阅。此列表将替换当前分配（如果有）。
+     * 请注意，通过{@link#assign（Collection）}将主题订阅与组管理与手动分区分配结合起来是不可能的。
      *
      * If the given list of topics is empty, it is treated the same as {@link #unsubscribe()}.
      *
@@ -904,6 +920,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     /**
      * Fetch data for the topics or partitions specified using one of the subscribe/assign APIs. It is an error to not have
      * subscribed to any topics or partitions before polling for data.
+     * 获取使用订阅/分配API之一指定的topic或partitions的数据。
+     * 在轮询数据之前没有订阅任何主题或分区是错误的。
      * <p>
      * On each poll, consumer will try to use the last consumed offset as the starting offset and fetch sequentially. The last
      * consumed offset can be manually set through {@link #seek(TopicPartition, long)} or automatically set as the last committed
@@ -935,6 +953,10 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             long start = time.milliseconds();
             long remaining = timeout;
             do {
+                /*
+                做一轮pool。除了检查新数据外，它还执行任何需要的心跳、自动提交和偏移量更新。
+                返回当前consumer消费的分区以及分区存储的数据
+                 */
                 Map<TopicPartition, List<ConsumerRecord<K, V>>> records = pollOnce(remaining);
                 if (!records.isEmpty()) {
                     // before returning the fetched records, we can send off the next round of fetches
@@ -966,35 +988,50 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     /**
      * Do one round of polling. In addition to checking for new data, this does any needed
      * heart-beating, auto-commits, and offset updates.
+     * 做一轮pool。除了检查新数据外，它还执行任何需要的心跳、自动提交和偏移量更新。
      * @param timeout The maximum time to block in the underlying poll
      * @return The fetched records (may be empty)
+     *         这包括一个主题名和一个分区号（从中接收到的records）以及一个指向Kafka分区中记录的偏移量
      */
     private Map<TopicPartition, List<ConsumerRecord<K, V>>> pollOnce(long timeout) {
         // TODO: Sub-requests should take into account the poll timeout (KAFKA-1894)
+        // 确保broker上当前consumer的coordinator是可用的
+        // 如果coordinator没有创建，则先访问Broker创建coordinator角色
         coordinator.ensureCoordinatorReady();
 
-        // ensure we have partitions assigned if we expect to
+        // ensure we have partitions assigned if we expect to. 如果需要，请确保已分配分区。
         if (subscriptions.partitionsAutoAssigned())
+            /*
+            确保我们有来自coordinator的有效分区分配。如果没有有效分区，则需要join gruop, 然后分配partiton
+             */
             coordinator.ensurePartitionAssignment();
 
         // fetch positions if we have partitions we're subscribed to that we
         // don't know the offset for
         if (!subscriptions.hasAllFetchPositions())
+            /*
+            获取位置，如果我们订阅了分区，但不知道其偏移量
+             */
             updateFetchPositions(this.subscriptions.missingFetchPositions());
 
         long now = time.milliseconds();
 
         // execute delayed tasks (e.g. autocommits and heartbeats) prior to fetching records
+        // 在获取记录之前执行延迟任务（例如自动提交和心跳）
         client.executeDelayedTasks(now);
 
-        // init any new fetches (won't resend pending fetches)
+        // init any new fetches (won't resend pending fetches) 初始化任何新fetches（不会重新发送等待中的fetches）
         Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
 
         // if data is available already, e.g. from a previous network client poll() call to commit,
         // then just return it immediately
+        // 如果数据已经可用，例如从上一个network client poll（）调用提交，那么只需立即返回它
         if (!records.isEmpty())
             return records;
 
+        /*
+        异步发送fetch请求，得到分区中的数据
+         */
         fetcher.sendFetches();
         client.poll(timeout, now);
         return fetcher.fetchedRecords();

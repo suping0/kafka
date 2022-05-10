@@ -30,13 +30,17 @@ private[coordinator] sealed trait GroupState { def state: Byte }
 /**
  * Group is preparing to rebalance
  *
+ * 当前状态可以执行的操作
  * action: respond to heartbeats with REBALANCE_IN_PROGRESS
  *         respond to sync group with REBALANCE_IN_PROGRESS
  *         remove member on leave group request
  *         park join group requests from new or existing members until all expected members have joined
  *         allow offset commits from previous generation
  *         allow offset fetch requests
+ *
+ * 当出现以下操作时，group的状态转换方式
  * transition: some members have joined by the timeout => AwaitingSync
+ *             一些成员已通过超时加入 状态改变为AwaitingSync
  *             all members have left the group => Dead
  */
 private[coordinator] case object PreparingRebalance extends GroupState { val state: Byte = 1 }

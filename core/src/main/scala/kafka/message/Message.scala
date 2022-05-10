@@ -106,22 +106,23 @@ object Message {
  * 1. 4 byte CRC32 of the message
  * 2. 1 byte "magic" identifier to allow format changes, value is 0 or 1
  * 3. 1 byte "attributes" identifier to allow annotations on the message independent of the version
- *    bit 0 ~ 2 : Compression codec.
+ *    bit 0 ~ 2 : Compression codec. 压缩类型
  *      0 : no compression
  *      1 : gzip
  *      2 : snappy
  *      3 : lz4
- *    bit 3 : Timestamp type
+ *    bit 3 : Timestamp type  时间戳类型
  *      0 : create time
  *      1 : log append time
- *    bit 4 ~ 7 : reserved
- * 4. (Optional) 8 byte timestamp only if "magic" identifier is greater than 0
- * 5. 4 byte key length, containing length K
- * 6. K byte key
- * 7. 4 byte payload length, containing length V
- * 8. V byte payload
+ *    bit 4 ~ 7 : reserved  保留字节
+ * 4. (Optional) 8 byte timestamp only if "magic" identifier is greater than 0  可选的8个字节时间戳
+ * 5. 4 byte key length, containing length K  key的长度
+ * 6. K byte key  key的数据
+ * 7. 4 byte payload length, containing length V  消息的长度
+ * 8. V byte payload  消息本身的数据
  *
  * Default constructor wraps an existing ByteBuffer with the Message object with no change to the contents.
+ * 默认构造函数用消息对象包装现有的ByteBuffer，而不更改内容。
  * @param buffer the byte buffer of this message.
  * @param wrapperMessageTimestamp the wrapper message timestamp, which is only defined when the message is an inner
  *                                message of a compressed message.

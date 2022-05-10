@@ -25,10 +25,14 @@ import java.util.SortedSet;
 import java.util.TreeSet;
 
 /**
- * The roundrobin assignor lays out all the available partitions and all the available consumers. It
- * then proceeds to do a roundrobin assignment from partition to consumer. If the subscriptions of all consumer
- * instances are identical, then the partitions will be uniformly distributed. (i.e., the partition ownership counts
- * will be within a delta of exactly one across all consumers.)
+ * The roundrobin assignor lays out all the available partitions and all the available consumers.
+ * It then proceeds to do a roundrobin assignment from partition to consumer.
+ * If the subscriptions of all consumer instances are identical, then the partitions will be uniformly distributed.
+ * (i.e., the partition ownership counts will be within a delta of exactly one across all consumers.)
+ * 循环赋值器列出所有可用分区和所有可用使用者。
+ * 然后继续执行从分区到使用者的循环分配。
+ * 如果所有使用者实例的订阅都相同，则分区将均匀分布。
+ * （也就是说，分区所有权计数在所有使用者中正好是1的增量范围内。）
  *
  * For example, suppose there are two consumers C0 and C1, two topics t0 and t1, and each topic has 3 partitions,
  * resulting in partitions t0p0, t0p1, t0p2, t1p0, t1p1, and t1p2.
@@ -36,9 +40,18 @@ import java.util.TreeSet;
  * The assignment will be:
  * C0: [t0p0, t0p2, t1p1]
  * C1: [t0p1, t1p0, t1p2]
+ *
+ * 对于订阅了相同consumer，依次分配所有topic的分区
  */
 public class RoundRobinAssignor extends AbstractPartitionAssignor {
 
+    /**
+     * 对于订阅了相同consumer，依次分配所有topic的分区
+     * @param partitionsPerTopic The number of partitions for each subscribed topic. Topics not in metadata will be excluded
+     *                           from this map.
+     * @param subscriptions Map from the memberId to their respective topic subscription
+     * @return
+     */
     @Override
     public Map<String, List<TopicPartition>> assign(Map<String, Integer> partitionsPerTopic,
                                                     Map<String, List<String>> subscriptions) {

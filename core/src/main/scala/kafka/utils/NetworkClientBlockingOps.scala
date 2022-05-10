@@ -75,8 +75,13 @@ class NetworkClientBlockingOps(val client: NetworkClient) extends AnyVal {
    * care.
    */
   def blockingSendAndReceive(request: ClientRequest)(implicit time: JTime): ClientResponse = {
+    // 发送请求，将请求添加到inFlightRequests的requests队列中，等待异步发送
+    // 发送的是 ApiKeys.FETCH 的请求。
+    // 请求的发送都是用的一套网络框架，异步由工作线程循环poll监听OP_WRITE事件，发送请求
+    // kafka.server.KafkaApis.handle 处理接收到的请求
     client.send(request, time.milliseconds())
 
+    // 响应的回调函数
     pollContinuously { responses =>
       val response = responses.find { response =>
         response.request.request.header.correlationId == request.request.header.correlationId

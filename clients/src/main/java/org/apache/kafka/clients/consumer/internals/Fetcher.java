@@ -68,6 +68,7 @@ import java.util.Set;
 
 /**
  * This class manage the fetching process with the brokers.
+ * 这个类管理brokers的fetch 过程。
  */
 public class Fetcher<K, V> {
 
@@ -123,6 +124,7 @@ public class Fetcher<K, V> {
     /**
      * Set-up a fetch request for any node that we have assigned partitions for which doesn't already have
      * an in-flight fetch or pending fetch data.
+     * 为我们分配的分区(assigned partitions)中尚未有正在进行的fetch或等待中的fetch数据的任何节点设置获取请求。
      */
     public void sendFetches() {
         for (Map.Entry<Node, FetchRequest> fetchEntry: createFetchRequests().entrySet()) {

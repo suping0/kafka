@@ -58,6 +58,7 @@ import java.util.Set;
 
 /**
  * This class manages the coordination process with the consumer coordinator.
+ * 此类管理与consumer coordinator的协调过程。
  */
 public final class ConsumerCoordinator extends AbstractCoordinator {
 
@@ -206,20 +207,28 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             subscriptions.needReassignment();
             return;
         }
-
+        /*
+        自定义分区分配的组件；
+        assignmentStrategy : 传入分配协议
+         */
         PartitionAssignor assignor = lookupAssignor(assignmentStrategy);
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
 
+        /*
+        解析响应数据，得到消费分区的分配方案实例。
+         */
         Assignment assignment = ConsumerProtocol.deserializeAssignment(assignmentBuffer);
 
         // set the flag to refresh last committed offsets
         subscriptions.needRefreshCommits();
 
-        // update partition assignment
+        // update partition assignment 更新分区分配
+        // 更细consumer group消费的分区分配
         subscriptions.assignFromSubscribed(assignment.partitions());
 
         // give the assignor a chance to update internal state based on the received assignment
+        // 给赋值器一个机会，根据接收到的assignment 更新内部状态
         assignor.onAssignment(assignment);
 
         // reschedule the auto commit starting from now
@@ -227,6 +236,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             autoCommitTask.reschedule();
 
         // execute the user's callback after rebalance
+        // 在重新平衡后执行用户的回调
         ConsumerRebalanceListener listener = subscriptions.listener();
         log.info("Setting newly assigned partitions {} for group {}", subscriptions.assignedPartitions(), groupId);
         try {
@@ -240,15 +250,31 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
     }
 
+    /**
+     * 为group中的consumer执行分配。
+     * leader使用它将状态推送到group的所有成员（例如，在新consumer的情况下推送partition assignments）
+     * @param leaderId The id of the leader (which is this member)
+     * @param assignmentStrategy  分配策略
+     * @param allSubscriptions  Metadata from all members of the group
+     *                          组中所有成员的元数据。key：topic. value：userData
+     * @return
+     */
     @Override
     protected Map<String, ByteBuffer> performAssignment(String leaderId,
                                                         String assignmentStrategy,
                                                         Map<String, ByteBuffer> allSubscriptions) {
+        /*
+        assignor 执行分区的组件
+        此接口用于定义在{@link org.apache.kafka.clients.consumer.KafkaConsumer}中使用的消费分区分配.
+         */
         PartitionAssignor assignor = lookupAssignor(assignmentStrategy);
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
 
         Set<String> allSubscribedTopics = new HashSet<>();
+        /*
+        <member, userData>
+         */
         Map<String, Subscription> subscriptions = new HashMap<>();
         for (Map.Entry<String, ByteBuffer> subscriptionEntry : allSubscriptions.entrySet()) {
             Subscription subscription = ConsumerProtocol.deserializeSubscription(subscriptionEntry.getValue());
@@ -258,17 +284,21 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         // the leader will begin watching for changes to any of the topics the group is interested in,
         // which ensures that all metadata changes will eventually be seen
+        // leader将开始关注小组感兴趣的任何主题的更改，这将确保所有元数据更改最终都会被看到
         this.subscriptions.groupSubscribe(allSubscribedTopics);
         metadata.setTopics(this.subscriptions.groupSubscription());
 
         // update metadata (if needed) and keep track of the metadata used for assignment so that
         // we can check after rebalance completion whether anything has changed
+        // 更新元数据（如果需要）并跟踪用于分配的元数据，以便在重新平衡完成后检查是否有任何更改
         client.ensureFreshMetadata();
         assignmentSnapshot = metadataSnapshot;
 
         log.debug("Performing assignment for group {} using strategy {} with subscriptions {}",
                 groupId, assignor.name(), subscriptions);
-
+        /*
+        执行组分配（group assigment）
+         */
         Map<String, Assignment> assignment = assignor.assign(metadata.fetch(), subscriptions);
 
         log.debug("Finished assignment for group {}: {}", groupId, assignment);
@@ -351,6 +381,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
     /**
      * Ensure that we have a valid partition assignment from the coordinator.
+     * 确保我们有来自coordinator的有效分区分配。
      */
     public void ensurePartitionAssignment() {
         if (subscriptions.partitionsAutoAssigned()) {
@@ -360,9 +391,12 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             // track of the fact that we need to rebalance again to reflect the change to the topic subscription. Without
             // ensuring that the metadata is fresh, any metadata update that changes the topic subscriptions and arrives with a
             // rebalance in progress will essentially be ignored. See KAFKA-3949 for the complete description of the problem.
-            if (subscriptions.hasPatternSubscription())
+            if (subscriptions.hasPatternSubscription()) {
                 client.ensureFreshMetadata();
-
+            }
+            /*
+            检查是否需要加入consumer group
+             */
             ensureActiveGroup();
         }
     }
@@ -381,6 +415,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
     public void commitOffsetsAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, OffsetCommitCallback callback) {
         this.subscriptions.needRefreshCommits();
+        /*
+        发送offset commit请求。提交指定的主题和分区列表的偏移量。
+         */
         RequestFuture<Void> future = sendOffsetCommitRequest(offsets);
         final OffsetCommitCallback cb = callback == null ? defaultOffsetCommitCallback : callback;
         future.addListener(new RequestFutureListener<Void>() {
@@ -466,7 +503,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 reschedule(now + interval);
                 return;
             }
-
+            /*
+            执行commit offset
+             */
             commitOffsetsAsync(subscriptions.allConsumed(), new OffsetCommitCallback() {
                 @Override
                 public void onComplete(Map<TopicPartition, OffsetAndMetadata> offsets, Exception exception) {
@@ -499,6 +538,8 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
      * Commit offsets for the specified list of topics and partitions. This is a non-blocking call
      * which returns a request future that can be polled in the case of a synchronous commit or ignored in the
      * asynchronous case.
+     * 提交指定的主题和分区列表的偏移量。
+     * 这是一个非阻塞调用，它返回一个将来的请求，在同步提交的情况下可以轮询该请求，在异步提交的情况下可以忽略该请求。
      *
      * @param offsets The list of offsets per partition that should be committed.
      * @return A request future whose value indicates whether the commit was successful or not
@@ -525,7 +566,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 offsetData);
 
         log.trace("Sending offset-commit request with {} to coordinator {} for group {}", offsets, coordinator, groupId);
-
+        /*
+        发送请求到管理当前group的机器
+         */
         return client.send(coordinator, ApiKeys.OFFSET_COMMIT, req)
                 .compose(new OffsetCommitResponseHandler(offsets));
     }

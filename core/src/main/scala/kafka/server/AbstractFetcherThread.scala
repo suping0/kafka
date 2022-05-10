@@ -83,10 +83,14 @@ abstract class AbstractFetcherThread(name: String,
     fetcherLagStats.unregister()
   }
 
+  /**
+   * 线程run()方法执行的逻辑
+   */
   override def doWork() {
 
     val fetchRequest = inLock(partitionMapLock) {
-      val fetchRequest = buildFetchRequest(partitionMap)
+      // 构建fetch请求
+      val fetchRequest: REQ = buildFetchRequest(partitionMap)
       if (fetchRequest.isEmpty) {
         trace("There are no active partitions. Back off for %d ms before sending a fetch request".format(fetchBackOffMs))
         partitionMapCond.await(fetchBackOffMs, TimeUnit.MILLISECONDS)
@@ -94,8 +98,10 @@ abstract class AbstractFetcherThread(name: String,
       fetchRequest
     }
 
-    if (!fetchRequest.isEmpty)
+    if (!fetchRequest.isEmpty) {
+      // 发送fetch请求
       processFetchRequest(fetchRequest)
+    }
   }
 
   private def processFetchRequest(fetchRequest: REQ) {
@@ -104,6 +110,7 @@ abstract class AbstractFetcherThread(name: String,
 
     try {
       trace("Issuing to broker %d of fetch request %s".format(sourceBroker.id, fetchRequest))
+      // 得到fetch请求的响应数据
       responseData = fetch(fetchRequest)
     } catch {
       case t: Throwable =>
@@ -119,9 +126,12 @@ abstract class AbstractFetcherThread(name: String,
     fetcherStats.requestRate.mark()
 
     if (responseData.nonEmpty) {
+      // 得到fetch的响应数据
       // process fetched data
       inLock(partitionMapLock) {
-
+        /*
+        处理fetch的响应
+         */
         responseData.foreach { case (topicAndPartition, partitionData) =>
           val TopicAndPartition(topic, partitionId) = topicAndPartition
           partitionMap.get(topicAndPartition).foreach(currentPartitionFetchState =>
@@ -139,7 +149,11 @@ abstract class AbstractFetcherThread(name: String,
                     partitionMap.put(topicAndPartition, new PartitionFetchState(newOffset))
                     fetcherLagStats.getAndMaybePut(topic, partitionId).lag = Math.max(0L, partitionData.highWatermark - newOffset)
                     fetcherStats.byteRate.mark(validBytes)
+                    /*
                     // Once we hand off the partition data to the subclass, we can't mess with it any more in this thread
+                    // 一旦我们将分区数据交给子类，我们就不能再在这个线程中处理它了
+                    处理fetch到的数据
+                     */
                     processPartitionData(topicAndPartition, currentPartitionFetchState.offset, partitionData)
                   } catch {
                     case ime: CorruptRecordException =>

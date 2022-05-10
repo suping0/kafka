@@ -31,11 +31,15 @@ import org.apache.zookeeper.Watcher.Event.KeeperState
 
 /**
  * This class registers the broker in zookeeper to allow 
- * other brokers and consumers to detect failures. It uses an ephemeral znode with the path:
+ * other brokers and consumers to detect failures.
+ * 此类在zookeeper中注册代理，以允许其他代理和使用者检测失败。
+ *
+ * It uses an ephemeral znode with the path: 它使用一个短暂的znode，路径为：
  *   /brokers/ids/[0...N] --> advertisedHost:advertisedPort
  *   
  * Right now our definition of health is fairly naive. If we register in zk we are healthy, otherwise
  * we are dead.
+ * 现在我们对健康的定义还很幼稚。如果我们在zk注册，我们是健康的，否则我们就死了。
  */
 class KafkaHealthcheck(brokerId: Int,
                        advertisedEndpoints: Map[SecurityProtocol, EndPoint],
@@ -48,6 +52,7 @@ class KafkaHealthcheck(brokerId: Int,
 
   def startup() {
     zkUtils.zkClient.subscribeStateChanges(sessionExpireListener)
+    // 创建一个临时节点
     register()
   }
 
@@ -67,6 +72,7 @@ class KafkaHealthcheck(brokerId: Int,
     // only PLAINTEXT is supported as default
     // if the broker doesn't listen on PLAINTEXT protocol, an empty endpoint will be registered and older clients will be unable to connect
     val plaintextEndpoint = updatedEndpoints.getOrElse(SecurityProtocol.PLAINTEXT, new EndPoint(null,-1,null))
+    // 在zk上创建临时节点，就相当于将当前broker注册到zk上了
     zkUtils.registerBrokerInZk(brokerId, plaintextEndpoint.host, plaintextEndpoint.port, updatedEndpoints, jmxPort, rack,
       interBrokerProtocolVersion)
   }

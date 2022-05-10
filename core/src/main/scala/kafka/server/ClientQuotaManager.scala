@@ -100,6 +100,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
 
   /**
    * Records that a clientId changed some metric being throttled (produced/consumed bytes, QPS etc.)
+   * 记录clientId更改了某些被限制的度量（生成/消耗的字节、QPS等）
    * @param clientId clientId that produced the data
    * @param value amount of data written in bytes
    * @param callback Callback function. This will be triggered immediately if quota is not violated.
@@ -112,7 +113,7 @@ class ClientQuotaManager(private val config: ClientQuotaManagerConfig,
     var throttleTimeMs = 0
     try {
       clientSensors.quotaSensor.record(value)
-      // trigger the callback immediately if quota is not violated
+      // trigger the callback immediately if quota is not violated 回调produceResponseCallback()方法
       callback(0)
     } catch {
       case qve: QuotaViolationException =>

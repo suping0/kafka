@@ -36,6 +36,8 @@ import scala.collection.mutable.ArrayBuffer
 /**
  * An on-disk message set. An optional start and end position can be applied to the message set
  * which will allow slicing a subset of the file.
+ * 磁盘上的消息集。
+ * 可选的开始和结束位置可以应用于消息集，这将允许对文件的子集进行切片。
  * @param file The file name for the underlying log data
  * @param channel the underlying file channel used
  * @param start A lower bound on the absolute position in the file from which the message set begins
@@ -78,6 +80,9 @@ class FileMessageSet private[kafka](@volatile var file: File,
    * For windows NTFS and some old LINUX file system, set preallocate to true and initFileSize
    * with one value (for example 512 * 1024 *1024 ) can improve the kafka produce performance.
    * If it's new file and preallocate is true, end will be set to 0.  Otherwise set to Int.MaxValue.
+   * 使用initFileSize和preallocate创建一个没有切片的文件消息集。
+   * 对于windows NTFS和一些旧的LINUX文件系统，将preallocate设置为true并使用一个值初始化filesize（例如512*1024*1024）可以提高kafka的性能。
+   * 如果是新文件且preallocate为true，则end将设置为0。否则设置为整数最大值.
    */
   def this(file: File, fileAlreadyExists: Boolean, initFileSize: Int, preallocate: Boolean) =
       this(file,
@@ -93,12 +98,14 @@ class FileMessageSet private[kafka](@volatile var file: File,
 
   /**
    * Create a slice view of the file message set that begins and ends at the given byte offsets
+   * 创建以给定字节偏移量开始和结束的文件消息集的切片视图
    */
   def this(file: File, channel: FileChannel, start: Int, end: Int) =
     this(file, channel, start, end, isSlice = true)
 
   /**
    * Return a message set which is a view into this set starting from the given position and with the given size limit.
+   * 返回一个消息集，该消息集是从给定位置开始并以给定大小限制进入该集的视图。
    *
    * If the size is beyond the end of the file, the end will be based on the size of the file at the time of the read.
    *
@@ -123,6 +130,7 @@ class FileMessageSet private[kafka](@volatile var file: File,
   /**
    * Search forward for the file position of the last offset that is greater than or equal to the target offset
    * and return its physical position. If no such offsets are found, return null.
+   * 向前搜索大于或等于目标偏移量的最后偏移量的文件位置，并返回其物理位置。如果找不到这样的偏移量，则返回null。
    * @param targetOffset The offset to search for.
    * @param startingPosition The starting position in the file to begin searching from.
    */
@@ -294,7 +302,11 @@ class FileMessageSet private[kafka](@volatile var file: File,
    * Append these messages to the message set
    */
   def append(messages: ByteBufferMessageSet) {
-    val written = messages.writeFullyTo(channel)
+    /*
+     * channel 对应的是磁盘文件的管道, 就是.log日志文件锁所对应的file channel
+     */
+    val written: Int = messages.writeFullyTo(channel)
+    // 以原子方式将给定值与当前值相加。
     _size.getAndAdd(written)
   }
 
@@ -302,6 +314,7 @@ class FileMessageSet private[kafka](@volatile var file: File,
    * Commit all written data to the physical disk
    */
   def flush() = {
+    // 强制将对此频道文件的任何更新写入包含它的存储设备。
     channel.force(true)
   }
 
@@ -379,6 +392,8 @@ object FileMessageSet
    * Open a channel for the given file
    * For windows NTFS and some old LINUX file system, set preallocate to true and initFileSize
    * with one value (for example 512 * 1025 *1024 ) can improve the kafka produce performance.
+   * 为windows NTFS和一些旧的LINUX文件系统打开给定文件的通道，
+   * 将preallocate设置为true，并使用一个值初始化filesize（例如512*1025*1024）可以提高kafka的性能。
    * @param file File path
    * @param mutable mutable
    * @param fileAlreadyExists File already exists or not

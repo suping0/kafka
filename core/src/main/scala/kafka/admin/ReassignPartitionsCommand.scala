@@ -44,12 +44,16 @@ object ReassignPartitionsCommand extends Logging {
                           30000,
                           JaasUtils.isZkSecurityEnabled())
     try {
-      if(opts.options.has(opts.verifyOpt))
+      if(opts.options.has(opts.verifyOpt)) {
+        //  查看任务执行的进度
         verifyAssignment(zkUtils, opts)
-      else if(opts.options.has(opts.generateOpt))
+      } else if(opts.options.has(opts.generateOpt)) {
+        // 生成执行任务
         generateAssignment(zkUtils, opts)
-      else if (opts.options.has(opts.executeOpt))
+      } else if (opts.options.has(opts.executeOpt)) {
+        // 执行rebalance任务
         executeAssignment(zkUtils, opts)
+      }
     } catch {
       case e: Throwable =>
         println("Partitions reassignment failed due to " + e.getMessage)
@@ -147,13 +151,20 @@ object ReassignPartitionsCommand extends Logging {
     }
     val reassignPartitionsCommand = new ReassignPartitionsCommand(zkUtils, partitionsToBeReassigned.toMap)
     // before starting assignment, output the current replica assignment to facilitate rollback
+    // 在开始分配之前，输出当前副本分配以便于回滚
     val currentPartitionReplicaAssignment = zkUtils.getReplicaAssignmentForTopics(partitionsToBeReassigned.map(_._1.topic))
     println("Current partition replica assignment\n\n%s\n\nSave this to use as the --reassignment-json-file option during rollback"
       .format(zkUtils.formatAsReassignmentJson(currentPartitionReplicaAssignment)))
-    // start the reassignment
-    if(reassignPartitionsCommand.reassignPartitions())
+    /*
+    start the reassignment
+    开始重新分配, 将分配策略写到zk的节点 ReassignPartitionsPath = "/admin/reassign_partitions"中
+     */
+    if(reassignPartitionsCommand.reassignPartitions()) {
+      /*
+      执行rebalance
+       */
       println("Successfully started reassignment of partitions %s".format(zkUtils.formatAsReassignmentJson(partitionsToBeReassigned.toMap)))
-    else
+    } else
       println("Failed to reassign partitions %s".format(partitionsToBeReassigned))
   }
 
@@ -233,7 +244,14 @@ class ReassignPartitionsCommand(zkUtils: ZkUtils, partitions: collection.Map[Top
         false
       }
       else {
+        /*
+        需要被rebelance的topic 分区和副本信息
+         */
         val jsonReassignmentData = zkUtils.formatAsReassignmentJson(validPartitions)
+        /*
+        使用给定的路径和数据创建持久节点。必要时创建父级。
+        将重分配的策略(jsonReassignmentData)写到/admin/reassign_partitions 节点中
+         */
         zkUtils.createPersistentPath(ZkUtils.ReassignPartitionsPath, jsonReassignmentData)
         true
       }

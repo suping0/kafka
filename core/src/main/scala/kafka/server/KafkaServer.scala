@@ -156,6 +156,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
   /**
    * Start up API for bringing up a single instance of the Kafka server.
    * Instantiates the LogManager, the SocketServer and the request handlers - KafkaRequestHandlers
+   * 实例化LogManager、SocketServer和 request handlers-KafkaRequestHandlers
    */
   def startup() {
     try {
@@ -173,13 +174,19 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
 
         brokerState.newState(Starting)
 
-        /* start scheduler */
+        /* start scheduler
+        * 延迟任务执行的线程池
+        * */
         kafkaScheduler.startup()
 
-        /* setup zookeeper */
+        /* setup zookeeper
+        * 初始化zk操作组件。建zk客户端和连接
+        * */
         zkUtils = initZk()
 
-        /* start log manager */
+        /* start log manager
+        * 负责磁盘读写的组件
+        *  */
         logManager = createLogManager(zkUtils.zkClient, brokerState)
         logManager.startup()
 
@@ -187,23 +194,35 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         config.brokerId =  getBrokerId
         this.logIdent = "[Kafka Server " + config.brokerId + "], "
 
+        // 网络通信服务器组件，An NIO socket server.
+        // broker的An NIO socket server.
+        // 用于接收和处理请求。
         socketServer = new SocketServer(config, metrics, kafkaMetricsTime)
         socketServer.startup()
 
-        /* start replica manager */
+        /* start replica manager 封装了logManagre,管理副本.
+        * 副本数据写入本地磁盘，副本同步等相关的副本操作
+        * */
         replicaManager = new ReplicaManager(config, metrics, time, kafkaMetricsTime, zkUtils, kafkaScheduler, logManager,
           isShuttingDown)
         replicaManager.startup()
 
-        /* start kafka controller */
+        /* start kafka controller 管理集群
+        * 每个broker都会有controller，但是同一时间只会有一个controller负责整个集群的元数据管理
+        * 其他broker负责和整个kafkaController保持通信，同步元数据，主备容灾
+        * */
         kafkaController = new KafkaController(config, zkUtils, brokerState, kafkaMetricsTime, metrics, threadNamePrefix)
         kafkaController.startup()
 
-        /* start group coordinator */
+        /* start group coordinator 管理消费者组
+        * 消费者组的管理组件，负责一个消费者组中所有消费者对于数据的消费
+        * */
         groupCoordinator = GroupCoordinator(config, zkUtils, replicaManager, kafkaMetricsTime)
         groupCoordinator.startup()
 
-        /* Get the authorizer and initialize it if one is specified.*/
+        /* Get the authorizer and initialize it if one is specified.
+        * 负责认证授权
+        * */
         authorizer = Option(config.authorizerClassName).filter(_.nonEmpty).map { authorizerClassName =>
           val authZ = CoreUtils.createObject[Authorizer](authorizerClassName)
           authZ.configure(config.originals())
@@ -211,8 +230,10 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         }
 
         /* start processing requests */
+        // 处理各种Kafka网络请求的逻辑
         apis = new KafkaApis(socketServer.requestChannel, replicaManager, groupCoordinator,
           kafkaController, zkUtils, config.brokerId, config, metadataCache, metrics, authorizer)
+        // 实例化请求处理的线程池, 默认是8个线程
         requestHandlerPool = new KafkaRequestHandlerPool(config.brokerId, socketServer.requestChannel, apis, config.numIoThreads)
         brokerState.newState(RunningAsBroker)
 
@@ -239,6 +260,9 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
           else
             (protocol, endpoint)
         }
+        /*
+        kafka broker的健康检查
+         */
         kafkaHealthcheck = new KafkaHealthcheck(config.brokerId, listeners, zkUtils, config.rack,
           config.interBrokerProtocolVersion)
         kafkaHealthcheck.startup()

@@ -99,7 +99,7 @@ public class RequestFuture<T> {
      * and the value can be obtained through {@link #value()}.
      * @param value corresponding value (or null if there is none)
      */
-    public void complete(T value) {
+    public void  complete(T value) {
         if (isDone)
             throw new IllegalStateException("Invalid attempt to complete a request future which is already complete");
         this.value = value;
@@ -128,7 +128,7 @@ public class RequestFuture<T> {
         raise(error.exception());
     }
 
-    private void fireSuccess() {
+    private void  fireSuccess() {
         for (RequestFutureListener<T> listener : listeners)
             listener.onSuccess(value);
     }
@@ -140,6 +140,7 @@ public class RequestFuture<T> {
 
     /**
      * Add a listener which will be notified when the future completes
+     * 添加一个监听器，它将在future完成时收到通知
      * @param listener
      */
     public void addListener(RequestFutureListener<T> listener) {
@@ -155,15 +156,23 @@ public class RequestFuture<T> {
 
     /**
      * Convert from a request future of one type to another type
+     * 从一种类型的请求转换为另一种类型
      * @param adapter The adapter which does the conversion
      * @param <S> The type of the future adapted to
      * @return The new future
      */
     public <S> RequestFuture<S> compose(final RequestFutureAdapter<T, S> adapter) {
         final RequestFuture<S> adapted = new RequestFuture<S>();
+        /*
+        添加一个监听器，它将在future完成时收到通知
+         */
         addListener(new RequestFutureListener<T>() {
             @Override
             public void onSuccess(T value) {
+                /*
+                处理CoordinatorResponse；
+                see : org.apache.kafka.clients.consumer.internals.AbstractCoordinator.CoordinatorResponseHandler.onSuccess
+                 */
                 adapter.onSuccess(value, adapted);
             }
 

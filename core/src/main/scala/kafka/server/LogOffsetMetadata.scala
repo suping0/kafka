@@ -32,9 +32,9 @@ object LogOffsetMetadata {
 
 }
 
-/*
+/**
  * A log offset structure, including:
- *  1. the message offset
+ *  1. the message offset 就是leo(数据写入的offset)
  *  2. the base message offset of the located segment
  *  3. the physical position on the located segment
  */

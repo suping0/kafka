@@ -26,10 +26,14 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The range assignor works on a per-topic basis. For each topic, we lay out the available partitions in numeric order
- * and the consumers in lexicographic order. We then divide the number of partitions by the total number of
- * consumers to determine the number of partitions to assign to each consumer. If it does not evenly
- * divide, then the first few consumers will have one extra partition.
+ * The range assignor works on a per-topic basis.
+ * For each topic, we lay out the available partitions in numeric order and the consumers in lexicographic order.
+ * We then divide the number of partitions by the total number of consumers to determine the number of partitions to assign to each consumer.
+ * If it does not evenly divide, then the first few consumers will have one extra partition.
+ * 范围赋值器以每个主题为基础前提，执行assignment。
+ * 对于每个主题，我们按数字顺序排列可用分区，按字典顺序排列使用者。
+ * 然后，我们将分区数除以consumer总数，以确定分配给每个consumer的分区数。
+ * 如果它不能平均分配，那么前几个消费者将有一个额外的分区。
  *
  * For example, suppose there are two consumers C0 and C1, two topics t0 and t1, and each topic has 3 partitions,
  * resulting in partitions t0p0, t0p1, t0p2, t1p0, t1p1, and t1p2.
@@ -37,6 +41,8 @@ import java.util.Map;
  * The assignment will be:
  * C0: [t0p0, t0p1, t1p0, t1p1]
  * C1: [t0p2, t1p2]
+ *
+ * 每个topic的分区数/consumer的数量，不能整除则第一个consumer多一个分区
  */
 public class RangeAssignor extends AbstractPartitionAssignor {
 
@@ -55,6 +61,15 @@ public class RangeAssignor extends AbstractPartitionAssignor {
         return res;
     }
 
+    /**
+     * 每个topic的分区数/consumer的数量，不能整除则第一个consumer多一个分区
+     * 我们将分区数除以consumer总数，以确定分配给每个consumer的分区数。
+     * 如果它不能平均分配，那么前几个消费者将有一个额外的分区。
+     * @param partitionsPerTopic The number of partitions for each subscribed topic. Topics not in metadata will be excluded
+     *                           from this map.
+     * @param subscriptions Map from the memberId to their respective topic subscription
+     * @return
+     */
     @Override
     public Map<String, List<TopicPartition>> assign(Map<String, Integer> partitionsPerTopic,
                                                     Map<String, List<String>> subscriptions) {

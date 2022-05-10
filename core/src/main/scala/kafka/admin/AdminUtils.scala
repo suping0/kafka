@@ -400,7 +400,13 @@ object AdminUtils extends Logging {
                   topicConfig: Properties = new Properties,
                   rackAwareMode: RackAwareMode = RackAwareMode.Enforced) {
     val brokerMetadatas = getBrokerMetadatas(zkUtils, rackAwareMode)
+    /*
+    基于均匀分配算法，分配副本
+     */
     val replicaAssignment = AdminUtils.assignReplicasToBrokers(brokerMetadatas, partitions, replicationFactor)
+    /*
+    将topic和partition信息写入到zk中，然后会执行相应的监听器的回调函数(TopicChangeListener)
+     */
     AdminUtils.createOrUpdateTopicPartitionAssignmentPathInZK(zkUtils, topic, replicaAssignment, topicConfig)
   }
 
@@ -437,16 +443,23 @@ object AdminUtils extends Logging {
     }
 
     // create the partition assignment
+    /*
+    写topic partiton到zk
+     */
     writeTopicPartitionAssignment(zkUtils, topic, partitionReplicaAssignment, update)
   }
 
   private def writeTopicPartitionAssignment(zkUtils: ZkUtils, topic: String, replicaAssignment: Map[Int, Seq[Int]], update: Boolean) {
     try {
+      // zkPath = /brokers/topics/${topic}
       val zkPath = getTopicPath(topic)
-      val jsonPartitionData = zkUtils.replicaAssignmentZkData(replicaAssignment.map(e => (e._1.toString -> e._2)))
+      val jsonPartitionData: String = zkUtils.replicaAssignmentZkData(replicaAssignment.map(e => (e._1.toString -> e._2)))
 
       if (!update) {
         info("Topic creation " + jsonPartitionData.toString)
+        /*
+        创建topic, 节点是topic信息，节点存储的值就是对应的partiton信息（以jsonString的格式，序列化成bytep[]）
+         */
         zkUtils.createPersistentPath(zkPath, jsonPartitionData)
       } else {
         info("Topic update " + jsonPartitionData.toString)

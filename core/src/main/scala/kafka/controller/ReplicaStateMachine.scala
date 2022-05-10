@@ -16,11 +16,13 @@
 */
 package kafka.controller
 
+import kafka.cluster.Broker
+
 import collection._
 import collection.JavaConversions._
 import java.util.concurrent.atomic.AtomicBoolean
-import kafka.common.{TopicAndPartition, StateChangeFailedException}
-import kafka.utils.{ZkUtils, ReplicationUtils, Logging}
+import kafka.common.{StateChangeFailedException, TopicAndPartition}
+import kafka.utils.{Logging, ReplicationUtils, ZkUtils}
 import org.I0Itec.zkclient.IZkChildListener
 import org.apache.log4j.Logger
 import kafka.controller.Callbacks._
@@ -313,6 +315,10 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
   }
 
   private def registerBrokerChangeListener() = {
+    /*
+    broker状态改变回调该实例的方法
+    监听 /brokers/ids 这个目录下节点的变化
+     */
     zkUtils.zkClient.subscribeChildChanges(ZkUtils.BrokerIdsPath, brokerChangeListener)
   }
 
@@ -348,33 +354,53 @@ class ReplicaStateMachine(controller: KafkaController) extends Logging {
 
   /**
    * This is the zookeeper listener that triggers all the state transitions for a replica
+   * broker状态改变回调该方法
    */
   class BrokerChangeListener() extends IZkChildListener with Logging {
     this.logIdent = "[BrokerChangeListener on Controller " + controller.config.brokerId + "]: "
+
+    /**
+     * 每当目录下的节点出现变动，就会回调这个函数，对controller内存中的broker节点数(metadata)做更新
+     * @param parentPath
+     * @param currentBrokerList
+     */
     def handleChildChange(parentPath : String, currentBrokerList : java.util.List[String]) {
       info("Broker change listener fired for path %s with children %s".format(parentPath, currentBrokerList.sorted.mkString(",")))
       inLock(controllerContext.controllerLock) {
         if (hasStarted.get) {
           ControllerStats.leaderElectionTimer.time {
             try {
-              val curBrokers = currentBrokerList.map(_.toInt).toSet.flatMap(zkUtils.getBrokerInfo)
+              val curBrokers: Predef.Set[Broker] = currentBrokerList.map(_.toInt).toSet.flatMap(zkUtils.getBrokerInfo)
               val curBrokerIds = curBrokers.map(_.id)
               val liveOrShuttingDownBrokerIds = controllerContext.liveOrShuttingDownBrokerIds
+              /*
+              得到新添加的broker, 已经死掉的broker
+               */
               val newBrokerIds = curBrokerIds -- liveOrShuttingDownBrokerIds
               val deadBrokerIds = liveOrShuttingDownBrokerIds -- curBrokerIds
               val newBrokers = curBrokers.filter(broker => newBrokerIds(broker.id))
               controllerContext.liveBrokers = curBrokers
+
               val newBrokerIdsSorted = newBrokerIds.toSeq.sorted
               val deadBrokerIdsSorted = deadBrokerIds.toSeq.sorted
               val liveBrokerIdsSorted = curBrokerIds.toSeq.sorted
+              // 得到当前集群中所有的broker节点的状态
               info("Newly added brokers: %s, deleted brokers: %s, all live brokers: %s"
                 .format(newBrokerIdsSorted.mkString(","), deadBrokerIdsSorted.mkString(","), liveBrokerIdsSorted.mkString(",")))
               newBrokers.foreach(controllerContext.controllerChannelManager.addBroker)
               deadBrokerIds.foreach(controllerContext.controllerChannelManager.removeBroker)
-              if(newBrokerIds.size > 0)
+
+              // 针对新加入和死到的broker进行处理
+              if(newBrokerIds.size > 0) {
+                // 更新Metadata
                 controller.onBrokerStartup(newBrokerIdsSorted)
-              if(deadBrokerIds.size > 0)
+              }
+              if(deadBrokerIds.size > 0) {
+                /*
+                是否哟broker宕机
+                 */
                 controller.onBrokerFailure(deadBrokerIdsSorted)
+              }
             } catch {
               case e: Throwable => error("Error while handling broker changes", e)
             }

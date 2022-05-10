@@ -967,6 +967,7 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean) extends Abstra
   }
 
   // If the user did not define listeners but did define host or port, let's use them in backward compatible way
+  // 如果用户没有定义侦听器，但是定义了主机或端口，那么让我们以向后兼容的方式使用它们
   // If none of those are defined, we default to PLAINTEXT://:9092
   private def getListeners(): immutable.Map[SecurityProtocol, EndPoint] = {
     if (getString(KafkaConfig.ListenersProp) != null) {
